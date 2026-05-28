@@ -22,10 +22,10 @@ const COLUMNS = [
   {
     title: "Partners",
     links: [
-      { label: "Trade associations", href: "/contact?plan=partner" },
-      { label: "Worker co-ops", href: "/why" },
-      { label: "CDFIs & lenders", href: "/contact?plan=partner" },
-      { label: "SBA buyers", href: "/signup?plan=new-owner" },
+      { label: "For associations", href: "/partners" },
+      { label: "Foundations & alliances", href: "/partners" },
+      { label: "CDFIs & lenders", href: "/partners" },
+      { label: "Become a partner", href: "/contact?plan=partner" },
     ],
   },
 ];
