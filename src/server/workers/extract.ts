@@ -12,7 +12,8 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import * as schema from "@/db/schema";
 import { makeGateway, MODELS } from "@/lib/ai-gateway";
-import { EXTRACTION_SYSTEM, buildExtractionPrompt, CONFIDENCE_THRESHOLD } from "@/prompts/manufacturing/extract";
+import { getExtractPrompt } from "@/prompts/extract-registry";
+import { CONFIDENCE_THRESHOLD } from "@/prompts/shared/extract";
 import { nanoid } from "@/lib/nanoid";
 
 // ── Zod schema for Claude's JSON output ──────────────────────────────────────
@@ -115,6 +116,8 @@ export async function runExtraction(params: ExtractionParams): Promise<void> {
   let parsed: ExtractionOutput;
 
   try {
+    // Select the trade-specific extraction prompt for this org's vertical.
+    const { EXTRACTION_SYSTEM, buildExtractionPrompt } = getExtractPrompt(vertical);
     const prompt = buildExtractionPrompt({ rawText: ocrText, vertical, orgName });
     const result = await gateway.complete({
       model: MODELS.extraction,
@@ -145,6 +148,11 @@ export async function runExtraction(params: ExtractionParams): Promise<void> {
       .where(eq(schema.documents.id, documentId));
   }
 
+  // Idempotency: a document fully owns the entities it produced. Clear any
+  // prior contributions before re-writing so re-running the pipeline on the
+  // same document never duplicates rows.
+  await clearDocumentEntities(db, documentId);
+
   // Write all entity types
   await Promise.all([
     writeCustomers(db, parsed.customers ?? [], orgId, documentId),
@@ -159,6 +167,19 @@ export async function runExtraction(params: ExtractionParams): Promise<void> {
   await db.update(schema.documents)
     .set({ status: "embedding" })
     .where(eq(schema.documents.id, documentId));
+}
+
+/** Remove every row a given document previously produced (for idempotent re-runs). */
+async function clearDocumentEntities(db: ReturnType<typeof drizzle>, docId: string) {
+  await Promise.all([
+    db.delete(schema.customers).where(eq(schema.customers.sourceDocumentId, docId)),
+    db.delete(schema.equipment).where(eq(schema.equipment.sourceDocumentId, docId)),
+    db.delete(schema.financials).where(eq(schema.financials.sourceDocumentId, docId)),
+    db.delete(schema.employees).where(eq(schema.employees.sourceDocumentId, docId)),
+    db.delete(schema.processes).where(eq(schema.processes.sourceDocumentId, docId)),
+    db.delete(schema.orgMilestones).where(eq(schema.orgMilestones.sourceDocumentId, docId)),
+    db.delete(schema.extractedEntities).where(eq(schema.extractedEntities.documentId, docId)),
+  ]);
 }
 
 // ── Entity writers (all check confidence threshold) ───────────────────────────

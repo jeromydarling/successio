@@ -161,9 +161,11 @@ export const documentsRouter = router({
       const queryVector = embedResult.data[0];
       if (!queryVector) return [];
 
-      // Query Vectorize — filter by orgId via metadata
+      // Query Vectorize within this org's namespace (hard isolation),
+      // with the metadata filter as defense-in-depth.
       const results = await ctx.env.VECTORS.query(queryVector, {
         topK: 10,
+        namespace: `org_${orgId}`,
         filter: { orgId },
         returnMetadata: "all",
       });

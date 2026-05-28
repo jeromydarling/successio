@@ -1,6 +1,27 @@
 /**
- * @vertical placeholder
- * Prompt stub — full extraction prompt ships in a later sprint.
- * The extraction worker falls back to the manufacturing prompt for all verticals.
+ * Construction vertical — entity extraction prompt.
  */
-export { PROMPT_VERSION, EXTRACTION_SYSTEM, buildExtractionPrompt, CONFIDENCE_THRESHOLD } from "@/prompts/manufacturing/extract";
+
+import {
+  makeExtractionSystem,
+  makeBuildExtractionPrompt,
+  CONFIDENCE_THRESHOLD,
+  type VerticalPromptConfig,
+} from "@/prompts/shared/extract";
+
+const config: VerticalPromptConfig = {
+  version: "construction-extract-v1",
+  domain: "construction and general-contracting firms — site work, framing, remodeling, and commercial build-out",
+  documentTypes: ["bid", "contract", "change_order", "subcontractor_agreement", "permit", "customer_list", "equipment_list", "financial"],
+  hints: [
+    "Backlog (signed-but-unbuilt contracts) is a core valuation driver — capture each project contract and its status.",
+    "Heavy equipment (excavators, loaders, trucks, lifts) should be recorded with manufacturer, year, and condition.",
+    "Subcontractor relationships and a reliable crew are key people/operations assets — note them.",
+    "Bonding capacity and contractor license class are important compliance milestones.",
+  ],
+};
+
+export const PROMPT_VERSION = config.version;
+export const EXTRACTION_SYSTEM = makeExtractionSystem(config);
+export const buildExtractionPrompt = makeBuildExtractionPrompt(config);
+export { CONFIDENCE_THRESHOLD };

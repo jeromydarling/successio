@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -139,7 +139,11 @@ export const customers = sqliteTable(
     sourceDocumentId: text("source_document_id"),
     ...timestamps,
   },
-  (t) => [index("customers_org_idx").on(t.orgId)]
+  (t) => [
+    index("customers_org_idx").on(t.orgId),
+    // Dedup: one record per (doc, name). Manual rows (null doc) stay distinct.
+    uniqueIndex("customers_dedup_idx").on(t.orgId, t.sourceDocumentId, t.name),
+  ]
 );
 
 export const equipment = sqliteTable(
@@ -158,7 +162,10 @@ export const equipment = sqliteTable(
     sourceDocumentId: text("source_document_id"),
     ...timestamps,
   },
-  (t) => [index("equipment_org_idx").on(t.orgId)]
+  (t) => [
+    index("equipment_org_idx").on(t.orgId),
+    uniqueIndex("equipment_dedup_idx").on(t.orgId, t.sourceDocumentId, t.name),
+  ]
 );
 
 export const processes = sqliteTable(
@@ -175,7 +182,10 @@ export const processes = sqliteTable(
     sourceDocumentId: text("source_document_id"),
     ...timestamps,
   },
-  (t) => [index("processes_org_idx").on(t.orgId)]
+  (t) => [
+    index("processes_org_idx").on(t.orgId),
+    uniqueIndex("processes_dedup_idx").on(t.orgId, t.sourceDocumentId, t.title),
+  ]
 );
 
 export const employees = sqliteTable(
@@ -193,7 +203,10 @@ export const employees = sqliteTable(
     sourceDocumentId: text("source_document_id"),
     ...timestamps,
   },
-  (t) => [index("employees_org_idx").on(t.orgId)]
+  (t) => [
+    index("employees_org_idx").on(t.orgId),
+    uniqueIndex("employees_dedup_idx").on(t.orgId, t.sourceDocumentId, t.name),
+  ]
 );
 
 export const financials = sqliteTable(
@@ -211,7 +224,10 @@ export const financials = sqliteTable(
     sourceDocumentId: text("source_document_id"),
     ...timestamps,
   },
-  (t) => [index("financials_org_idx").on(t.orgId)]
+  (t) => [
+    index("financials_org_idx").on(t.orgId),
+    uniqueIndex("financials_dedup_idx").on(t.orgId, t.sourceDocumentId, t.year),
+  ]
 );
 
 // ─── Readiness ────────────────────────────────────────────────────────────────
@@ -325,6 +341,7 @@ export const orgMilestones = sqliteTable(
   (t) => [
     index("milestones_org_idx").on(t.orgId),
     index("milestones_year_idx").on(t.year),
+    uniqueIndex("milestones_dedup_idx").on(t.orgId, t.sourceDocumentId, t.year, t.title),
   ]
 );
 

@@ -40,9 +40,24 @@ export async function runEmbedding(params: EmbedParams): Promise<void> {
     return;
   }
 
+  // Idempotency: drop any vectors + chunk rows this document produced before,
+  // so re-embedding (e.g. fewer chunks the second time) leaves no orphans.
+  const priorChunks = await db
+    .select({ vectorId: schema.documentChunks.vectorId })
+    .from(schema.documentChunks)
+    .where(eq(schema.documentChunks.documentId, documentId))
+    .all();
+  const priorVectorIds = priorChunks.map((c) => c.vectorId).filter((v): v is string => Boolean(v));
+  if (env.VECTORS && priorVectorIds.length > 0) {
+    await env.VECTORS.deleteByIds(priorVectorIds);
+  }
+  await db.delete(schema.documentChunks).where(eq(schema.documentChunks.documentId, documentId));
+
   const chunks = chunkText(ocrText, 1500, 200);
   const embeddings = await gateway.embed(chunks);
 
+  // Hard tenant isolation: each org gets its own Vectorize namespace.
+  const namespace = `org_${orgId}`;
   const vectors: VectorizeVector[] = [];
   const chunkRows: typeof schema.documentChunks.$inferInsert[] = [];
 
@@ -51,6 +66,7 @@ export async function runEmbedding(params: EmbedParams): Promise<void> {
     vectors.push({
       id: vectorId,
       values: embeddings[i],
+      namespace,
       metadata: { orgId, documentId, chunkIndex: i },
     });
     chunkRows.push({
