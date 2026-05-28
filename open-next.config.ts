@@ -1,6 +1,9 @@
 import type { OpenNextConfig } from "@opennextjs/cloudflare";
 
 const config: OpenNextConfig = {
+  // Pin the framework build so routing `npm run build` through this adapter
+  // (see package.json) doesn't recurse back into `npm run build`.
+  buildCommand: "next build",
   default: {
     override: {
       wrapper: "cloudflare-node",
