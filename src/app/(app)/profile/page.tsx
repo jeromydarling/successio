@@ -1,8 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { motion } from "framer-motion";
-import { Share2, Lock, Globe, Building2, Copy, Check } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Share2, Lock, Globe, Building2, Copy, Check,
+  RefreshCw, Eye, Trash2, AlertTriangle, ChevronDown, ChevronUp,
+} from "lucide-react";
 import { AppTopNav } from "@/components/app/app-topnav";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc-client";
@@ -10,7 +13,7 @@ import { cn } from "@/lib/utils";
 
 const TIERS = [
   {
-    key: "public",
+    key: "public" as const,
     label: "Teaser",
     icon: Globe,
     description: "Business name, industry, general description. No financials. Anyone with the link.",
@@ -18,7 +21,7 @@ const TIERS = [
     bg: "bg-emerald-500/10",
   },
   {
-    key: "nda",
+    key: "nda" as const,
     label: "NDA-gated",
     icon: Lock,
     description: "Full profile including financials, customer count, process docs. Requires name + email.",
@@ -26,7 +29,7 @@ const TIERS = [
     bg: "bg-amber/10",
   },
   {
-    key: "lender",
+    key: "lender" as const,
     label: "Lender Package",
     icon: Building2,
     description: "Raw extracted data JSON + all source documents. For CDFIs and SBA lenders.",
@@ -35,19 +38,52 @@ const TIERS = [
   },
 ] as const;
 
+const SECTION_LABELS: Record<string, string> = {
+  executive_summary:    "Executive Summary",
+  business_overview:    "Business Overview",
+  opportunity:          "The Opportunity",
+  customer_overview:    "Customer Overview",
+  financial_highlights: "Financial Highlights",
+  operations:           "Operations",
+  team:                 "Team & People",
+  equipment_and_assets: "Equipment & Assets",
+  reason_for_sale:      "Reason for Sale",
+};
+
 export default function ProfilePage() {
   const [activeTier, setActiveTier] = useState<"public" | "nda" | "lender">("public");
-  const [copied, setCopied] = useState(false);
+  const [copiedTier, setCopiedTier] = useState<string | null>(null);
+  const [expandedSection, setExpandedSection] = useState<string | null>("executive_summary");
+
+  const utils = trpc.useUtils();
   const { data: org } = trpc.businesses.getOrg.useQuery();
   const { data: score } = trpc.businesses.latestScore.useQuery();
+  const { data: profile, isLoading: profileLoading } = trpc.profiles.get.useQuery();
+  const { data: views = [] } = trpc.profiles.listViews.useQuery();
+  const { data: tokens = [] } = trpc.profiles.listShareTokens.useQuery();
 
-  const fakeLink = `https://successio.app/share/demo-${activeTier}-token`;
+  const generateMutation = trpc.profiles.generate.useMutation({
+    onSuccess: () => {
+      utils.profiles.get.invalidate();
+      utils.profiles.listShareTokens.invalidate();
+    },
+  });
 
-  const copy = () => {
-    navigator.clipboard.writeText(fakeLink);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+  const getTokenMutation = trpc.profiles.getShareToken.useMutation({
+    onSuccess: (data) => {
+      const link = `${window.location.origin}/share/${data.token}`;
+      navigator.clipboard.writeText(link);
+      setCopiedTier(data.tier);
+      setTimeout(() => setCopiedTier(null), 2500);
+      utils.profiles.listShareTokens.invalidate();
+    },
+  });
+
+  const revokeTokenMutation = trpc.profiles.revokeToken.useMutation({
+    onSuccess: () => utils.profiles.listShareTokens.invalidate(),
+  });
+
+  const canGenerate = score && score.score >= 30;
 
   return (
     <>
@@ -55,75 +91,212 @@ export default function ProfilePage() {
       <main className="flex-1 overflow-y-auto p-6">
         <div className="mx-auto max-w-4xl space-y-6">
 
-          {/* Profile status */}
+          {/* Profile status / generate */}
           <div className="rounded-2xl border border-edge bg-canvas-soft/50 p-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h2 className="text-lg font-semibold text-ink">
                   {org?.name ?? "Your Business"}
                 </h2>
-                <p className="text-sm text-ink-soft">{org?.vertical} · Sale Readiness: <span className="font-mono text-amber-bright">{score?.score ?? "—"}</span> / 100</p>
+                <p className="mt-0.5 text-sm text-ink-soft">
+                  {org?.vertical} · Readiness:{" "}
+                  <span className="font-mono text-amber-bright">{score?.score ?? "—"}</span> / 100
+                </p>
+                {profile && (
+                  <p className="mt-1 text-xs text-emerald-400">Profile generated</p>
+                )}
               </div>
-              <Button size="sm" disabled={!score || score.score < 40}>
-                <Share2 className="size-4" /> Generate profile
+              <Button
+                onClick={() => generateMutation.mutate()}
+                disabled={generateMutation.isPending || !canGenerate}
+                size="sm"
+              >
+                {generateMutation.isPending ? (
+                  <RefreshCw className="size-4 animate-spin" />
+                ) : (
+                  <Share2 className="size-4" />
+                )}
+                {profile ? "Regenerate profile" : "Generate profile"}
               </Button>
             </div>
-            {(!score || score.score < 40) && (
-              <p className="mt-3 rounded-xl bg-amber/[0.06] px-4 py-3 text-sm text-amber-bright/80">
-                Upload more documents to reach a score of 40 before generating your buyer profile.
-              </p>
+            {!canGenerate && (
+              <div className="mt-4 flex items-start gap-2 rounded-xl bg-amber/[0.06] px-4 py-3">
+                <AlertTriangle className="size-4 shrink-0 text-amber mt-0.5" />
+                <p className="text-sm text-amber-bright/80">
+                  Upload more documents to reach a score of 30 before generating your buyer profile.
+                </p>
+              </div>
             )}
           </div>
+
+          {/* Profile preview */}
+          <AnimatePresence>
+            {profile?.content && (
+              <motion.section
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+              >
+                <h3 className="mb-3 text-sm font-semibold text-ink">Profile preview</h3>
+                <div className="space-y-2">
+                  {Object.entries(SECTION_LABELS)
+                    .filter(([key]) => key in (profile.content ?? {}))
+                    .map(([key, label]) => (
+                      <div key={key} className="rounded-xl border border-edge bg-canvas-soft/30">
+                        <button
+                          onClick={() => setExpandedSection(expandedSection === key ? null : key)}
+                          className="flex w-full items-center justify-between p-4 text-left"
+                        >
+                          <span className="text-sm font-medium text-ink">{label}</span>
+                          {expandedSection === key ? (
+                            <ChevronUp className="size-4 text-ink-faint" />
+                          ) : (
+                            <ChevronDown className="size-4 text-ink-faint" />
+                          )}
+                        </button>
+                        <AnimatePresence>
+                          {expandedSection === key && profile.content && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: "auto", opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              className="overflow-hidden"
+                            >
+                              <p className="border-t border-edge px-4 pb-4 pt-3 text-sm leading-relaxed text-ink-soft">
+                                {profile.content[key as keyof typeof profile.content]}
+                              </p>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    ))}
+                </div>
+              </motion.section>
+            )}
+          </AnimatePresence>
 
           {/* Share tier selector */}
           <section>
             <h3 className="mb-3 text-sm font-semibold text-ink">Share access tiers</h3>
             <div className="grid gap-3 md:grid-cols-3">
-              {TIERS.map((tier) => (
-                <button
-                  key={tier.key}
-                  onClick={() => setActiveTier(tier.key)}
-                  className={cn(
-                    "rounded-xl border p-4 text-left transition-all",
-                    activeTier === tier.key
-                      ? "border-amber/40 bg-amber/[0.06]"
-                      : "border-edge hover:border-edge-strong"
-                  )}
-                >
-                  <div className={cn("flex size-9 items-center justify-center rounded-lg", tier.bg)}>
-                    <tier.icon className={cn("size-5", tier.color)} />
+              {TIERS.map((tier) => {
+                const existingToken = tokens.find((t) => t.tier === tier.key);
+                return (
+                  <div
+                    key={tier.key}
+                    onClick={() => setActiveTier(tier.key)}
+                    className={cn(
+                      "cursor-pointer rounded-xl border p-4 transition-all",
+                      activeTier === tier.key
+                        ? "border-amber/40 bg-amber/[0.06]"
+                        : "border-edge hover:border-edge-strong"
+                    )}
+                  >
+                    <div className={cn("flex size-9 items-center justify-center rounded-lg", tier.bg)}>
+                      <tier.icon className={cn("size-5", tier.color)} />
+                    </div>
+                    <p className="mt-3 text-sm font-semibold text-ink">{tier.label}</p>
+                    <p className="mt-1 text-xs text-ink-soft">{tier.description}</p>
+                    {existingToken && (
+                      <p className="mt-2 flex items-center gap-1 text-[10px] text-emerald-400">
+                        <Eye className="size-3" /> {existingToken.viewCount} view{existingToken.viewCount !== 1 ? "s" : ""}
+                      </p>
+                    )}
                   </div>
-                  <p className="mt-3 text-sm font-semibold text-ink">{tier.label}</p>
-                  <p className="mt-1 text-xs text-ink-soft">{tier.description}</p>
-                </button>
-              ))}
+                );
+              })}
             </div>
           </section>
 
-          {/* Share link */}
+          {/* Share link actions */}
           <div className="rounded-xl border border-edge bg-canvas-soft/40 p-5">
-            <p className="text-xs font-mono uppercase tracking-widest text-ink-faint mb-3">
-              {TIERS.find(t => t.key === activeTier)?.label} link
+            <p className="mb-3 font-mono text-[10px] uppercase tracking-widest text-ink-faint">
+              {TIERS.find((t) => t.key === activeTier)?.label} link
             </p>
             <div className="flex items-center gap-2">
-              <code className="flex-1 truncate rounded-lg border border-edge bg-canvas px-3 py-2 font-mono text-xs text-ink-soft">
-                {fakeLink}
-              </code>
-              <Button size="sm" variant="outline" onClick={copy}>
-                {copied ? <Check className="size-4 text-emerald-400" /> : <Copy className="size-4" />}
-                {copied ? "Copied" : "Copy"}
-              </Button>
+              {(() => {
+                const tok = tokens.find((t) => t.tier === activeTier);
+                const shareLink = tok ? `${typeof window !== "undefined" ? window.location.origin : "https://successio.app"}/share/${tok.id}` : null;
+                return (
+                  <>
+                    <code className="flex-1 truncate rounded-lg border border-edge bg-canvas px-3 py-2 font-mono text-xs text-ink-soft">
+                      {shareLink ?? "(no link yet — click Generate to create one)"}
+                    </code>
+                    {tok ? (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            navigator.clipboard.writeText(shareLink!);
+                            setCopiedTier(activeTier);
+                            setTimeout(() => setCopiedTier(null), 2500);
+                          }}
+                        >
+                          {copiedTier === activeTier ? <Check className="size-4 text-emerald-400" /> : <Copy className="size-4" />}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => revokeTokenMutation.mutate({ token: tok.id })}
+                          disabled={revokeTokenMutation.isPending}
+                        >
+                          <Trash2 className="size-4 text-red-400" />
+                        </Button>
+                      </>
+                    ) : (
+                      <Button
+                        size="sm"
+                        onClick={() => getTokenMutation.mutate({ tier: activeTier })}
+                        disabled={getTokenMutation.isPending || !profile}
+                      >
+                        {getTokenMutation.isPending ? <RefreshCw className="size-4 animate-spin" /> : <Share2 className="size-4" />}
+                        Create link
+                      </Button>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
 
-          {/* Access log placeholder */}
+          {/* Access audit log */}
           <section>
             <h3 className="mb-3 text-sm font-semibold text-ink">Access log</h3>
-            <div className="rounded-xl border border-dashed border-edge py-10 text-center">
-              <Share2 className="mx-auto size-8 text-ink-faint" />
-              <p className="mt-3 text-sm text-ink-soft">No views yet</p>
-              <p className="mt-1 text-xs text-ink-faint">Share a link to start tracking viewer activity</p>
-            </div>
+            {views.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-edge py-10 text-center">
+                <Eye className="mx-auto size-8 text-ink-faint" />
+                <p className="mt-3 text-sm text-ink-soft">No views yet</p>
+                <p className="mt-1 text-xs text-ink-faint">Share a link to start tracking viewer activity</p>
+              </div>
+            ) : (
+              <div className="overflow-hidden rounded-xl border border-edge">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-edge bg-canvas-soft/30">
+                      <th className="px-4 py-3 text-left font-medium text-ink-faint">Viewer</th>
+                      <th className="px-4 py-3 text-left font-medium text-ink-faint">Email</th>
+                      <th className="px-4 py-3 text-left font-medium text-ink-faint">Tier</th>
+                      <th className="px-4 py-3 text-left font-medium text-ink-faint">Viewed</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {views.map((view) => {
+                      const matchingToken = tokens.find((t) => t.id === view.tokenId);
+                      return (
+                        <tr key={view.id} className="border-b border-edge/50 hover:bg-white/[0.02]">
+                          <td className="px-4 py-3 text-ink">{view.viewerName ?? "Anonymous"}</td>
+                          <td className="px-4 py-3 text-ink-soft">{view.viewerEmail ?? "—"}</td>
+                          <td className="px-4 py-3 capitalize text-ink-soft">{matchingToken?.tier ?? "—"}</td>
+                          <td className="px-4 py-3 font-mono text-ink-faint">
+                            {new Date(view.createdAt).toLocaleDateString()}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
         </div>
       </main>

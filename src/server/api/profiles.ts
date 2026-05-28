@@ -1,0 +1,237 @@
+/**
+ * Profiles tRPC router — Phase 5 Deal Room.
+ * Generates the business profile via Claude Opus, manages share tokens,
+ * and exposes the access audit log.
+ */
+
+import { TRPCError } from "@trpc/server";
+import { z } from "zod";
+import { eq, and, desc } from "drizzle-orm";
+import { router, protectedProcedure } from "../trpc";
+import {
+  organizations,
+  businessProfiles,
+  shareTokens,
+  shareViews,
+  customers,
+  financials,
+  employees,
+  processes,
+  equipment,
+} from "@/db/schema";
+import { makeGateway, MODELS } from "@/lib/ai-gateway";
+import { buildProfilePrompt } from "@/prompts/manufacturing/profile";
+
+function nanoid(len = 21) {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let id = "";
+  const bytes = crypto.getRandomValues(new Uint8Array(len));
+  for (const b of bytes) id += chars[b % chars.length];
+  return id;
+}
+
+// Short, URL-safe share token (12 chars is enough entropy for this use case)
+function shareToken() {
+  return nanoid(12);
+}
+
+const profileContentSchema = z.object({
+  executive_summary:    z.string(),
+  business_overview:    z.string(),
+  customer_overview:    z.string(),
+  financial_highlights: z.string(),
+  operations:           z.string(),
+  team:                 z.string(),
+  equipment_and_assets: z.string(),
+  opportunity:          z.string(),
+  reason_for_sale:      z.string(),
+});
+
+export type ProfileContent = z.infer<typeof profileContentSchema>;
+
+export const profilesRouter = router({
+  /** Generate (or regenerate) the business profile via Claude Opus. */
+  generate: protectedProcedure.mutation(async ({ ctx }) => {
+    const { orgId } = ctx.session;
+
+    // Gather all org data for the prompt
+    const [org, custs, fins, emps, procs, equips] = await Promise.all([
+      ctx.db.select().from(organizations).where(eq(organizations.id, orgId)).get(),
+      ctx.db.select().from(customers).where(eq(customers.orgId, orgId)).all(),
+      ctx.db.select().from(financials).where(eq(financials.orgId, orgId)).orderBy(financials.year).all(),
+      ctx.db.select().from(employees).where(eq(employees.orgId, orgId)).all(),
+      ctx.db.select().from(processes).where(eq(processes.orgId, orgId)).all(),
+      ctx.db.select().from(equipment).where(eq(equipment.orgId, orgId)).all(),
+    ]);
+
+    if (!org) throw new TRPCError({ code: "NOT_FOUND" });
+
+    const gateway = makeGateway(ctx.env as any);
+    const prompt = buildProfilePrompt({
+      org,
+      customers: custs.map(c => ({ name: c.name, revenueShare: c.revenueShare, contractStatus: c.contractStatus })),
+      financials: fins.map(f => ({ year: f.year, revenue: f.revenue, grossProfit: f.grossProfit, ebitda: f.ebitda, ownerCompensation: f.ownerCompensation })),
+      employees: emps.map(e => ({ name: e.name, role: e.role, tenureYears: e.tenureYears, isKeyPerson: e.isKeyPerson ?? false })),
+      processes: procs.map(p => ({ title: p.title, steps: p.steps })),
+      equipment: equips.map(e => ({ name: e.name, manufacturer: e.manufacturer, yearInstalled: e.yearInstalled, estimatedValue: e.estimatedValue })),
+    });
+
+    const result = await gateway.complete({
+      model: MODELS.profile_draft,
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 8192,
+      temperature: 0.3,
+    });
+
+    const cleaned = result.content.replace(/^```json\s*/m, "").replace(/\s*```$/m, "").trim();
+    const content = profileContentSchema.parse(JSON.parse(cleaned));
+
+    // Upsert profile (one per org for MVP)
+    const existing = await ctx.db
+      .select({ id: businessProfiles.id })
+      .from(businessProfiles)
+      .where(eq(businessProfiles.orgId, orgId))
+      .orderBy(desc(businessProfiles.createdAt))
+      .limit(1)
+      .get();
+
+    const profileId = nanoid();
+    if (existing) {
+      await ctx.db
+        .update(businessProfiles)
+        .set({ content: JSON.stringify(content), isDraft: false })
+        .where(eq(businessProfiles.id, existing.id));
+      return { profileId: existing.id, content };
+    }
+
+    await ctx.db.insert(businessProfiles).values({
+      id: profileId,
+      orgId,
+      title: `${org.name} — Business Profile`,
+      content: JSON.stringify(content),
+      isDraft: false,
+    });
+    return { profileId, content };
+  }),
+
+  /** Return the latest generated profile for this org. */
+  get: protectedProcedure.query(async ({ ctx }) => {
+    const profile = await ctx.db
+      .select()
+      .from(businessProfiles)
+      .where(eq(businessProfiles.orgId, ctx.session.orgId))
+      .orderBy(desc(businessProfiles.createdAt))
+      .limit(1)
+      .get();
+
+    if (!profile) return null;
+
+    const content = (() => {
+      try { return profileContentSchema.parse(JSON.parse(profile.content)); } catch { return null; }
+    })();
+
+    return { ...profile, content };
+  }),
+
+  /** Create or retrieve a share token for a given tier. */
+  getShareToken: protectedProcedure
+    .input(z.object({ tier: z.enum(["public", "nda", "lender", "buyer"]) }))
+    .mutation(async ({ input, ctx }) => {
+      const { orgId } = ctx.session;
+
+      // Need a profile to attach the token to
+      const profile = await ctx.db
+        .select({ id: businessProfiles.id })
+        .from(businessProfiles)
+        .where(eq(businessProfiles.orgId, orgId))
+        .orderBy(desc(businessProfiles.createdAt))
+        .limit(1)
+        .get();
+
+      if (!profile) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Generate a profile first" });
+
+      // Return existing token for this tier if one exists
+      const existing = await ctx.db
+        .select()
+        .from(shareTokens)
+        .where(and(
+          eq(shareTokens.profileId, profile.id),
+          eq(shareTokens.tier, input.tier)
+        ))
+        .limit(1)
+        .get();
+
+      if (existing) return { token: existing.id, tier: input.tier };
+
+      const token = shareToken();
+      await ctx.db.insert(shareTokens).values({
+        id: token,
+        profileId: profile.id,
+        orgId,
+        tier: input.tier,
+      });
+
+      return { token, tier: input.tier };
+    }),
+
+  /** All share tokens for this org's profile. */
+  listShareTokens: protectedProcedure.query(async ({ ctx }) => {
+    const profile = await ctx.db
+      .select({ id: businessProfiles.id })
+      .from(businessProfiles)
+      .where(eq(businessProfiles.orgId, ctx.session.orgId))
+      .orderBy(desc(businessProfiles.createdAt))
+      .limit(1)
+      .get();
+
+    if (!profile) return [];
+
+    return ctx.db
+      .select()
+      .from(shareTokens)
+      .where(eq(shareTokens.profileId, profile.id))
+      .all();
+  }),
+
+  /** Access audit log for this org's share tokens. */
+  listViews: protectedProcedure.query(async ({ ctx }) => {
+    const tokens = await ctx.db
+      .select({ id: shareTokens.id })
+      .from(shareTokens)
+      .where(eq(shareTokens.orgId, ctx.session.orgId))
+      .all();
+
+    if (tokens.length === 0) return [];
+
+    const tokenIds = tokens.map((t) => t.id);
+
+    // Fetch all views for any token belonging to this org
+    const allViews = await Promise.all(
+      tokenIds.map((id) =>
+        ctx.db
+          .select()
+          .from(shareViews)
+          .where(eq(shareViews.tokenId, id))
+          .orderBy(desc(shareViews.createdAt))
+          .all()
+      )
+    );
+
+    return allViews.flat().sort((a, b) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    ).slice(0, 50);
+  }),
+
+  /** Revoke a share token (delete it). */
+  revokeToken: protectedProcedure
+    .input(z.object({ token: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      await ctx.db
+        .delete(shareTokens)
+        .where(and(
+          eq(shareTokens.id, input.token),
+          eq(shareTokens.orgId, ctx.session.orgId)
+        ));
+      return { success: true };
+    }),
+});
