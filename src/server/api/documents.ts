@@ -5,14 +5,8 @@ import { router, protectedProcedure } from "../trpc";
 import { documents, organizations, extractedEntities } from "@/db/schema";
 import { documentKey, detectFileType } from "@/lib/r2";
 import { uploadRequestSchema, documentJobSchema } from "@/types";
-
-function nanoid(len = 21) {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let id = "";
-  const bytes = crypto.getRandomValues(new Uint8Array(len));
-  for (const b of bytes) id += chars[b % chars.length];
-  return id;
-}
+import type { Vertical } from "@/lib/verticals";
+import { nanoid } from "@/lib/nanoid";
 
 export const documentsRouter = router({
   /** Step 1: Client calls this → gets a presigned R2 PUT URL + documentId.
@@ -78,12 +72,19 @@ export const documentsRouter = router({
 
       // Enqueue the processing job
       if (ctx.env.DOCUMENT_QUEUE) {
+        // Load org vertical so the pipeline uses the correct extraction prompt
+        const org = await ctx.db
+          .select({ vertical: organizations.vertical })
+          .from(organizations)
+          .where(eq(organizations.id, orgId))
+          .get();
+
         const job = documentJobSchema.parse({
           documentId: doc.id,
           orgId,
           r2Key: doc.r2Key,
           mimeType: doc.mimeType,
-          vertical: "manufacturing", // TODO: load from org record
+          vertical: (org?.vertical ?? "manufacturing") as Vertical,
         });
         await ctx.env.DOCUMENT_QUEUE.send(job);
       }

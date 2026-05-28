@@ -11,14 +11,7 @@ import {
   clearSessionCookie,
 } from "@/lib/auth";
 import { signupSchema, loginSchema } from "@/types";
-
-function nanoid(len = 21) {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let id = "";
-  const bytes = crypto.getRandomValues(new Uint8Array(len));
-  for (const b of bytes) id += chars[b % chars.length];
-  return id;
-}
+import { nanoid } from "@/lib/nanoid";
 
 export const authRouter = router({
   signup: publicProcedure

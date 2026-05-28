@@ -5,17 +5,10 @@
  */
 
 import { drizzle } from "drizzle-orm/d1";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import * as schema from "@/db/schema";
-
-function nanoid(len = 21) {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let id = "";
-  const bytes = crypto.getRandomValues(new Uint8Array(len));
-  for (const b of bytes) id += chars[b % chars.length];
-  return id;
-}
+import { nanoid } from "@/lib/nanoid";
 
 async function getDb() {
   const ctx = await getCloudflareContext();
@@ -117,10 +110,10 @@ export async function POST(
     durationSeconds: body.durationSeconds ?? null,
   });
 
-  // Increment view count
+  // Atomic increment to prevent race condition on concurrent views
   await db
     .update(schema.shareTokens)
-    .set({ viewCount: shareToken.viewCount + 1 })
+    .set({ viewCount: sql`view_count + 1` })
     .where(eq(schema.shareTokens.id, token));
 
   return Response.json({ success: true });

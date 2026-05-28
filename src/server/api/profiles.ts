@@ -6,7 +6,7 @@
 
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { router, protectedProcedure } from "../trpc";
 import {
   organizations,
@@ -21,14 +21,7 @@ import {
 } from "@/db/schema";
 import { makeGateway, MODELS } from "@/lib/ai-gateway";
 import { buildProfilePrompt } from "@/prompts/manufacturing/profile";
-
-function nanoid(len = 21) {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let id = "";
-  const bytes = crypto.getRandomValues(new Uint8Array(len));
-  for (const b of bytes) id += chars[b % chars.length];
-  return id;
-}
+import { nanoid } from "@/lib/nanoid";
 
 // Short, URL-safe share token (12 chars is enough entropy for this use case)
 function shareToken() {
@@ -95,7 +88,6 @@ export const profilesRouter = router({
       .limit(1)
       .get();
 
-    const profileId = nanoid();
     if (existing) {
       await ctx.db
         .update(businessProfiles)
@@ -104,6 +96,7 @@ export const profilesRouter = router({
       return { profileId: existing.id, content };
     }
 
+    const profileId = nanoid();
     await ctx.db.insert(businessProfiles).values({
       id: profileId,
       orgId,
@@ -205,21 +198,13 @@ export const profilesRouter = router({
 
     const tokenIds = tokens.map((t) => t.id);
 
-    // Fetch all views for any token belonging to this org
-    const allViews = await Promise.all(
-      tokenIds.map((id) =>
-        ctx.db
-          .select()
-          .from(shareViews)
-          .where(eq(shareViews.tokenId, id))
-          .orderBy(desc(shareViews.createdAt))
-          .all()
-      )
-    );
-
-    return allViews.flat().sort((a, b) =>
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    ).slice(0, 50);
+    return ctx.db
+      .select()
+      .from(shareViews)
+      .where(inArray(shareViews.tokenId, tokenIds))
+      .orderBy(desc(shareViews.createdAt))
+      .limit(50)
+      .all();
   }),
 
   /** Revoke a share token (delete it). */

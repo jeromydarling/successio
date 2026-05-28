@@ -6,17 +6,10 @@
  */
 
 import { drizzle } from "drizzle-orm/d1";
-import { eq, count } from "drizzle-orm";
+import { eq, count, and } from "drizzle-orm";
 import * as schema from "@/db/schema";
 import { calculateReadiness } from "@/lib/readiness";
-
-function nanoid(len = 21): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let id = "";
-  const bytes = crypto.getRandomValues(new Uint8Array(len));
-  for (const b of bytes) id += chars[b % chars.length];
-  return id;
-}
+import { nanoid } from "@/lib/nanoid";
 
 export async function recalculateScore(params: {
   orgId: string;
@@ -27,19 +20,32 @@ export async function recalculateScore(params: {
   const db = drizzle(env.DB, { schema });
 
   // Count present entities — each becomes a checklist signal
-  const [custCount, eqCount, finCount, procCount, empCount] = await Promise.all([
+  const [custCount, eqCount, finCount, procCount, empCount, certCount] = await Promise.all([
     db.select({ n: count() }).from(schema.customers).where(eq(schema.customers.orgId, orgId)).get(),
     db.select({ n: count() }).from(schema.equipment).where(eq(schema.equipment.orgId, orgId)).get(),
     db.select({ n: count() }).from(schema.financials).where(eq(schema.financials.orgId, orgId)).get(),
     db.select({ n: count() }).from(schema.processes).where(eq(schema.processes.orgId, orgId)).get(),
     db.select({ n: count() }).from(schema.employees).where(eq(schema.employees.orgId, orgId)).get(),
+    // Compliance proxy: count documents whose detected type suggests certifications or licenses
+    db.select({ n: count() })
+      .from(schema.documents)
+      .where(
+        and(
+          eq(schema.documents.orgId, orgId),
+          eq(schema.documents.status, "complete")
+        )
+      )
+      .get(),
   ]);
 
   const cust = custCount?.n ?? 0;
-  const eq_ = eqCount?.n ?? 0;
+  const equip = eqCount?.n ?? 0;
   const fin = finCount?.n ?? 0;
   const proc = procCount?.n ?? 0;
   const emp = empCount?.n ?? 0;
+  // Compliance: at least one completed document acts as a proxy until
+  // document-type classification is used for fine-grained scoring
+  const hasComplianceDocs = (certCount?.n ?? 0) >= 1;
 
   // Derive signals — weights within each category sum to 1
   const signals = [
@@ -55,13 +61,13 @@ export async function recalculateScore(params: {
     { category: "operations" as const, completed: proc >= 1, weight: 0.5 },
     { category: "operations" as const, completed: proc >= 3, weight: 0.5 },
     // Equipment (15%)
-    { category: "equipment" as const, completed: eq_ >= 1,   weight: 0.6 },
-    { category: "equipment" as const, completed: eq_ >= 5,   weight: 0.4 },
+    { category: "equipment" as const, completed: equip >= 1, weight: 0.6 },
+    { category: "equipment" as const, completed: equip >= 5, weight: 0.4 },
     // People (10%)
     { category: "people" as const, completed: emp >= 1,      weight: 0.6 },
     { category: "people" as const, completed: emp >= 3,      weight: 0.4 },
-    // Compliance (10%) — proxy: has any document marked as certification
-    { category: "compliance" as const, completed: false,     weight: 1.0 },
+    // Compliance (10%) — proxy: has any completed document
+    { category: "compliance" as const, completed: hasComplianceDocs, weight: 1.0 },
   ];
 
   const { score, breakdown } = calculateReadiness(vertical, signals);
@@ -80,7 +86,7 @@ export async function recalculateScore(params: {
     hasFinancials: fin >= 1,
     hasThreeYearFinancials: fin >= 3,
     hasSops: proc >= 1,
-    hasEquipment: eq_ >= 1,
+    hasEquipment: equip >= 1,
     hasKeyPersonnel: emp >= 1,
   });
 
@@ -105,14 +111,17 @@ async function updateChecklist(
 
   for (const [category, key, label, completed] of itemMap) {
     const existing = await db
-      .select({ id: schema.readinessChecklist.id })
+      .select({ id: schema.readinessChecklist.id, completed: schema.readinessChecklist.completed })
       .from(schema.readinessChecklist)
-      .where(eq(schema.readinessChecklist.orgId, orgId))
-      .all();
+      .where(
+        and(
+          eq(schema.readinessChecklist.orgId, orgId),
+          eq(schema.readinessChecklist.itemKey, key)
+        )
+      )
+      .get();
 
-    const exists = existing.some(() => true); // simplified — full impl uses itemKey index
-
-    if (!exists) {
+    if (!existing) {
       await db.insert(schema.readinessChecklist).values({
         id: nanoid(),
         orgId,
@@ -123,10 +132,16 @@ async function updateChecklist(
         completed,
         completedAt: completed ? new Date() : undefined,
       }).onConflictDoNothing();
-    } else if (completed) {
+    } else if (completed && !existing.completed) {
+      // Only update if newly completed — avoid overwriting completedAt timestamp
       await db.update(schema.readinessChecklist)
         .set({ completed: true, completedAt: new Date() })
-        .where(eq(schema.readinessChecklist.orgId, orgId));
+        .where(
+          and(
+            eq(schema.readinessChecklist.orgId, orgId),
+            eq(schema.readinessChecklist.itemKey, key)
+          )
+        );
     }
   }
 }

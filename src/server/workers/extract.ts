@@ -13,14 +13,7 @@ import { z } from "zod";
 import * as schema from "@/db/schema";
 import { makeGateway, MODELS } from "@/lib/ai-gateway";
 import { EXTRACTION_SYSTEM, buildExtractionPrompt, CONFIDENCE_THRESHOLD } from "@/prompts/manufacturing/extract";
-
-function nanoid(len = 21): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let id = "";
-  const bytes = crypto.getRandomValues(new Uint8Array(len));
-  for (const b of bytes) id += chars[b % chars.length];
-  return id;
-}
+import { nanoid } from "@/lib/nanoid";
 
 // ── Zod schema for Claude's JSON output ──────────────────────────────────────
 

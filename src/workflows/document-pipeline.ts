@@ -17,7 +17,7 @@
 
 import { WorkflowEntrypoint, type WorkflowStep, type WorkflowEvent } from "cloudflare:workers";
 import { drizzle } from "drizzle-orm/d1";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import * as schema from "@/db/schema";
 import { detectFileType } from "@/lib/r2";
 import { runOcr } from "@/lib/ocr";
@@ -110,17 +110,19 @@ export class DocumentPipeline extends WorkflowEntrypoint<PipelineEnv, DocumentJo
 
     // ── Step 6: Flag items needing review ─────────────────────────────────────
     await step.do("flag_review_items", async () => {
-      // Items with confidence < 0.7 were already marked needs_review=true
-      // by the extract worker. Here we just ensure the document itself is
-      // marked complete (or needs_review if any entity flagged it).
+      // Any entity for this document with needsReview=true triggers a document-level review flag.
       const flagged = await db.select({ id: schema.extractedEntities.id })
         .from(schema.extractedEntities)
-        .where(eq(schema.extractedEntities.orgId, orgId))
+        .where(
+          and(
+            eq(schema.extractedEntities.documentId, documentId),
+            eq(schema.extractedEntities.needsReview, true)
+          )
+        )
         .all();
 
-      const anyFlagged = flagged.some(() => false); // placeholder — real impl checks needsReview col
       await db.update(schema.documents)
-        .set({ status: anyFlagged ? "needs_review" : "complete" })
+        .set({ status: flagged.length > 0 ? "needs_review" : "complete" })
         .where(eq(schema.documents.id, documentId));
     });
   }

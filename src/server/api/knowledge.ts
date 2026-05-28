@@ -11,14 +11,7 @@ import { router, protectedProcedure } from "../trpc";
 import { processes, organizations } from "@/db/schema";
 import { makeGateway, MODELS } from "@/lib/ai-gateway";
 import { buildSopPrompt } from "@/prompts/manufacturing/sop";
-
-function nanoid(len = 21) {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let id = "";
-  const bytes = crypto.getRandomValues(new Uint8Array(len));
-  for (const b of bytes) id += chars[b % chars.length];
-  return id;
-}
+import { nanoid } from "@/lib/nanoid";
 
 const sopSchema = z.object({
   title: z.string(),

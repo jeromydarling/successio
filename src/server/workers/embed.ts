@@ -12,14 +12,7 @@ import { eq } from "drizzle-orm";
 import * as schema from "@/db/schema";
 import { makeGateway } from "@/lib/ai-gateway";
 import { chunkText } from "@/lib/ocr";
-
-function nanoid(len = 21): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let id = "";
-  const bytes = crypto.getRandomValues(new Uint8Array(len));
-  for (const b of bytes) id += chars[b % chars.length];
-  return id;
-}
+import { nanoid } from "@/lib/nanoid";
 
 export interface EmbedParams {
   documentId: string;
