@@ -1,35 +1,114 @@
 "use client";
 
 import { useState } from "react";
-import { motion } from "framer-motion";
-import { Mic, MicOff, ClipboardList, ChevronRight } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Mic, MicOff, ClipboardList, RefreshCw, Save, RotateCcw,
+  Plus, Search,
+} from "lucide-react";
 import { AppTopNav } from "@/components/app/app-topnav";
 import { Button } from "@/components/ui/button";
+import { SopCard } from "@/components/knowledge/sop-card";
+import { useMediaRecorder } from "@/hooks/use-media-recorder";
+import { trpc } from "@/lib/trpc-client";
 import { cn } from "@/lib/utils";
 
-// Per-vertical prompted interview questions (stub set for Phase 1 — Phase 4 fleshes this out)
+// Prompted questions (manufacturing default — Phase 5: load from verticals config per org)
 const PROMPTS = [
   "How do you quote a job from scratch?",
   "Who are your three most important customers, and why do they keep coming back?",
-  "What breaks most often — and how do you fix it?",
+  "What breaks most often on the shop floor — and how do you handle it?",
   "If you were gone for a month, what would go wrong first?",
+  "Walk me through a job from order to shipping.",
+  "What does your quality check process look like?",
+  "How do you handle a difficult customer or a job gone wrong?",
   "What's the most important thing a new owner would need to know on day one?",
 ];
 
-type RecordingState = "idle" | "recording" | "processing" | "done";
+function formatDuration(secs: number) {
+  const m = Math.floor(secs / 60).toString().padStart(2, "0");
+  const s = (secs % 60).toString().padStart(2, "0");
+  return `${m}:${s}`;
+}
 
 export default function KnowledgePage() {
-  const [recState, setRecState] = useState<RecordingState>("idle");
   const [activePrompt, setActivePrompt] = useState(0);
+  const [search, setSearch] = useState("");
 
-  const toggleRecording = () => {
-    if (recState === "idle") {
-      setRecState("recording");
-    } else if (recState === "recording") {
-      setRecState("processing");
-      setTimeout(() => setRecState("done"), 1800); // Phase 4: real Whisper pipeline
-    }
+  // Voice capture state
+  const recorder = useMediaRecorder();
+  const [transcript, setTranscript] = useState<string | null>(null);
+  const [draft, setDraft] = useState<{ title: string; steps: string[]; owner?: string; notes?: string } | null>(null);
+  const [editDraftTitle, setEditDraftTitle] = useState("");
+  const [editDraftSteps, setEditDraftSteps] = useState<string[]>([]);
+
+  const utils = trpc.useUtils();
+  const { data: sops = [], isLoading: sopsLoading } = trpc.knowledge.listSops.useQuery();
+
+  const requestUpload = trpc.knowledge.requestAudioUpload.useMutation();
+  const processRecording = trpc.knowledge.processRecording.useMutation({
+    onSuccess: (data) => {
+      setTranscript(data.transcript);
+      setDraft(data.sop);
+      setEditDraftTitle(data.sop.title);
+      setEditDraftSteps(data.sop.steps);
+    },
+  });
+  const saveSop = trpc.knowledge.saveSop.useMutation({
+    onSuccess: () => {
+      utils.knowledge.listSops.invalidate();
+      recorder.reset();
+      setTranscript(null);
+      setDraft(null);
+    },
+  });
+
+  const handleStop = async () => {
+    recorder.stop();
   };
+
+  const handleProcess = async () => {
+    if (!recorder.audioBlob) return;
+
+    // Get presigned URL
+    const ext = recorder.audioBlob.type.includes("mp4") ? "mp4" : "webm";
+    const { r2Key, uploadUrl } = await requestUpload.mutateAsync({
+      filename: `recording.${ext}`,
+      mimeType: recorder.audioBlob.type,
+    });
+
+    // Upload to R2
+    await fetch(uploadUrl, {
+      method: "PUT",
+      body: recorder.audioBlob,
+      headers: { "Content-Type": recorder.audioBlob.type },
+    });
+
+    // Transcribe + generate SOP
+    await processRecording.mutateAsync({
+      r2Key,
+      question: PROMPTS[activePrompt],
+    });
+  };
+
+  const handleSave = () => {
+    saveSop.mutate({
+      title: editDraftTitle,
+      steps: editDraftSteps.filter(Boolean),
+      source: "voice",
+    });
+  };
+
+  const filteredSops = sops.filter((s) =>
+    !search || s.title.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const isProcessing = requestUpload.isPending || processRecording.isPending;
+  const processingStage = requestUpload.isPending
+    ? "Uploading recording…"
+    : processRecording.isPending
+    ? "Transcribing with Whisper…"
+    : null;
 
   return (
     <>
@@ -37,44 +116,99 @@ export default function KnowledgePage() {
       <main className="flex-1 overflow-y-auto p-6">
         <div className="mx-auto max-w-3xl space-y-6">
 
-          {/* Voice capture */}
+          {/* Voice capture card */}
           <section className="rounded-2xl border border-edge bg-canvas-soft/50 p-7">
             <h2 className="text-lg font-semibold text-ink">Speak your expertise</h2>
             <p className="mt-1 text-sm text-ink-soft">
-              Hit record and answer a question out loud. We transcribe it, then Claude drafts a clean SOP card you can edit.
+              Answer a prompt out loud. We transcribe it, then Claude drafts a clean SOP you can edit and save.
             </p>
 
             {/* Prompted question */}
             <div className="mt-5 rounded-xl border border-amber/20 bg-amber/[0.04] p-4">
-              <p className="text-xs font-mono uppercase tracking-widest text-amber mb-2">Prompt</p>
+              <p className="font-mono text-[10px] uppercase tracking-widest text-amber mb-2">Prompt</p>
               <p className="text-base text-ink">{PROMPTS[activePrompt]}</p>
             </div>
 
-            {/* Mic button */}
+            {/* Mic + controls */}
             <div className="mt-6 flex flex-col items-center gap-4">
-              <motion.button
-                onClick={toggleRecording}
-                animate={recState === "recording" ? { scale: [1, 1.04, 1] } : {}}
-                transition={{ duration: 1.5, repeat: Infinity }}
-                className={cn(
-                  "flex size-20 items-center justify-center rounded-full border-2 transition-all duration-200",
-                  recState === "recording"
-                    ? "border-red-500 bg-red-500/10 shadow-[0_0_0_8px_rgba(239,68,68,0.1)]"
-                    : "border-edge bg-white/[0.03] hover:border-edge-strong"
-                )}
-              >
-                {recState === "recording" ? (
-                  <MicOff className="size-7 text-red-400" />
-                ) : (
-                  <Mic className="size-7 text-ink-soft" />
-                )}
-              </motion.button>
+              {recorder.error && (
+                <p className="text-sm text-red-400">{recorder.error}</p>
+              )}
 
-              <p className="text-sm text-ink-soft">
-                {recState === "idle" && "Tap to start recording"}
-                {recState === "recording" && <span className="text-red-400">Recording… tap to stop</span>}
-                {recState === "processing" && "Transcribing with Whisper…"}
-                {recState === "done" && <span className="text-emerald-400">Transcribed! Review the card below.</span>}
+              <AnimatePresence mode="wait">
+                {recorder.state === "idle" && (
+                  <motion.button
+                    key="idle"
+                    initial={{ scale: 0.9, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.9, opacity: 0 }}
+                    onClick={recorder.start}
+                    className="flex size-20 items-center justify-center rounded-full border-2 border-edge bg-white/[0.03] hover:border-edge-strong transition-all"
+                  >
+                    <Mic className="size-7 text-ink-soft" />
+                  </motion.button>
+                )}
+
+                {recorder.state === "recording" && (
+                  <motion.button
+                    key="recording"
+                    initial={{ scale: 0.9, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.9, opacity: 0 }}
+                    onClick={handleStop}
+                    className="flex size-20 items-center justify-center rounded-full border-2 border-red-500 bg-red-500/10 shadow-[0_0_0_8px_rgba(239,68,68,0.08)] transition-all hover:shadow-[0_0_0_12px_rgba(239,68,68,0.12)]"
+                  >
+                    <motion.div
+                      animate={{ scale: [1, 1.12, 1] }}
+                      transition={{ duration: 1.4, repeat: Infinity }}
+                    >
+                      <MicOff className="size-7 text-red-400" />
+                    </motion.div>
+                  </motion.button>
+                )}
+
+                {recorder.state === "stopped" && !draft && (
+                  <motion.div
+                    key="stopped"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex flex-col items-center gap-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Button
+                        onClick={handleProcess}
+                        disabled={isProcessing}
+                        size="sm"
+                      >
+                        {isProcessing ? (
+                          <RefreshCw className="size-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="size-4" />
+                        )}
+                        {processingStage ?? "Transcribe & generate SOP"}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={recorder.reset}
+                        disabled={isProcessing}
+                      >
+                        <RotateCcw className="size-4" /> Discard
+                      </Button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <p className="text-sm text-ink-soft text-center">
+                {recorder.state === "idle" && "Tap to start recording"}
+                {recorder.state === "recording" && (
+                  <span className="font-mono text-red-400">
+                    ● Recording {formatDuration(recorder.durationSecs)} — tap to stop
+                  </span>
+                )}
+                {recorder.state === "stopped" && !isProcessing && !draft && "Recording ready — transcribe to continue"}
+                {isProcessing && <span className="text-amber">{processingStage}</span>}
               </p>
             </div>
 
@@ -100,15 +234,140 @@ export default function KnowledgePage() {
             </div>
           </section>
 
-          {/* SOP stubs — Phase 4 populates these from real voice capture */}
-          <section>
-            <h3 className="mb-3 text-sm font-semibold text-ink">Your SOPs</h3>
+          {/* Draft SOP review */}
+          <AnimatePresence>
+            {draft && (
+              <motion.section
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                className="rounded-2xl border border-amber/30 bg-amber/[0.03] p-6 space-y-4"
+              >
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-ink">Draft SOP — review before saving</h3>
+                  <button onClick={() => { setDraft(null); recorder.reset(); }}
+                    className="text-xs text-ink-faint hover:text-ink">Discard</button>
+                </div>
+
+                {/* Transcript */}
+                {transcript && (
+                  <div>
+                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Transcript</p>
+                    <p className="rounded-lg border border-edge bg-canvas-soft/30 p-3 text-xs italic leading-relaxed text-ink-soft">
+                      {transcript}
+                    </p>
+                  </div>
+                )}
+
+                {/* Editable title */}
+                <div>
+                  <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Title</label>
+                  <input
+                    value={editDraftTitle}
+                    onChange={(e) => setEditDraftTitle(e.target.value)}
+                    className="input-base text-sm font-medium"
+                  />
+                </div>
+
+                {/* Editable steps */}
+                <div>
+                  <label className="mb-2 block text-[10px] font-semibold uppercase tracking-wider text-ink-faint">Steps</label>
+                  <ol className="space-y-2">
+                    {editDraftSteps.map((step, i) => (
+                      <li key={i} className="flex items-start gap-2">
+                        <span className="mt-2 flex size-5 shrink-0 items-center justify-center rounded-full bg-amber/10 font-mono text-[10px] font-semibold text-amber">
+                          {i + 1}
+                        </span>
+                        <input
+                          value={step}
+                          onChange={(e) => setEditDraftSteps((s) => s.map((x, idx) => idx === i ? e.target.value : x))}
+                          className="input-base flex-1 text-xs"
+                        />
+                      </li>
+                    ))}
+                  </ol>
+                  <button
+                    onClick={() => setEditDraftSteps((s) => [...s, ""])}
+                    className="mt-2 flex items-center gap-1.5 text-xs text-amber hover:text-amber-bright"
+                  >
+                    <Plus className="size-3.5" /> Add step
+                  </button>
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <Button
+                    onClick={handleSave}
+                    disabled={saveSop.isPending}
+                    size="sm"
+                  >
+                    <Save className="size-4" /> Save SOP
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => { setDraft(null); recorder.reset(); }}
+                  >
+                    Discard
+                  </Button>
+                </div>
+              </motion.section>
+            )}
+          </AnimatePresence>
+
+          {/* Add manual SOP */}
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-ink">Your SOPs</h3>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => saveSop.mutate({ title: "New SOP", steps: ["Step 1"], source: "manual" })}
+            >
+              <Plus className="size-4" /> Add manually
+            </Button>
+          </div>
+
+          {/* Search */}
+          {sops.length > 3 && (
+            <div className="relative">
+              <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-ink-faint" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search SOPs…"
+                className="input-base pl-10"
+              />
+            </div>
+          )}
+
+          {/* SOP list */}
+          {sopsLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="h-32 animate-pulse rounded-xl bg-white/[0.03]" />
+              ))}
+            </div>
+          ) : filteredSops.length === 0 ? (
             <div className="rounded-xl border border-dashed border-edge py-12 text-center">
               <ClipboardList className="mx-auto size-9 text-ink-faint" />
               <p className="mt-3 text-sm text-ink-soft">No SOPs captured yet</p>
-              <p className="mt-1 text-xs text-ink-faint">Use voice capture above or upload a Word/PDF document</p>
+              <p className="mt-1 text-xs text-ink-faint">Use voice capture above or click "Add manually"</p>
             </div>
-          </section>
+          ) : (
+            <div className="space-y-3">
+              <AnimatePresence>
+                {filteredSops.map((sop) => (
+                  <SopCard
+                    key={sop.id}
+                    id={sop.id}
+                    title={sop.title}
+                    steps={sop.steps}
+                    owner={sop.owner}
+                    source={sop.source}
+                  />
+                ))}
+              </AnimatePresence>
+            </div>
+          )}
         </div>
       </main>
     </>
