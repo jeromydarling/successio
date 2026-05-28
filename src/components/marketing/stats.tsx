@@ -3,10 +3,10 @@
 import { AnimatedCounter, Reveal } from "./motion-primitives";
 
 const STATS = [
-  { value: 2.8, suffix: "M", decimals: 1, label: "U.S. business owners over 55 with no succession plan" },
-  { value: 70, suffix: "%", decimals: 0, label: "of owners who try to sell never find a buyer" },
-  { value: 38, suffix: " yrs", decimals: 0, label: "of know-how locked in a typical founder's head" },
-  { value: 6.2, prefix: "$", suffix: "M", decimals: 1, label: "median value a documented trades business commands" },
+  { value: 5, prefix: "$", suffix: "T", decimals: 0, label: "of family-owned businesses change hands this decade", source: "McKinsey, 2026" },
+  { value: 80, suffix: "%", decimals: 0, label: "of businesses listed for sale never find a buyer", source: "Exit Planning Institute" },
+  { value: 98, suffix: "%", decimals: 0, label: "of owners have never learned what their life's work is worth", source: "M&T Bank" },
+  { value: 50, suffix: "%", decimals: 0, label: "of deals that reach the table collapse in due diligence", source: "DueDilio, 2026" },
 ];
 
 export function Stats() {
@@ -25,6 +25,7 @@ export function Stats() {
               />
             </div>
             <p className="mt-2 text-sm leading-snug text-ink-soft">{s.label}</p>
+            <p className="mt-1.5 font-mono text-[10px] uppercase tracking-wider text-ink-faint">{s.source}</p>
           </Reveal>
         ))}
       </div>

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { motion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -18,33 +19,39 @@ export function ClosingCta() {
       <div className="mx-auto max-w-3xl px-5 text-center">
         <Reveal>
           <h2 className="text-balance text-4xl font-semibold leading-tight tracking-tight text-ink md:text-6xl">
-            Your life&apos;s work deserves
+            You&apos;ve done the hard part.
             <br />
             <span className="relative inline-block">
-              <span className="relative z-10 text-amber-bright">a proper handoff.</span>
+              <span className="relative z-10 text-amber-bright">Don&apos;t let it end in an auction.</span>
               <span className="absolute inset-x-0 bottom-1 z-0 h-3 -rotate-1 bg-amber/20" />
             </span>
           </h2>
           <p className="mx-auto mt-6 max-w-xl text-lg text-ink-soft text-pretty">
-            Start with a single document. Watch the readiness score move. Decide
-            who sees the rest. No spreadsheets, no consultants, no jargon.
+            Forty years of work shouldn&apos;t be liquidated in a weekend to a
+            stranger who strips it for parts. Get it down on paper, show the next
+            owner what they&apos;re really getting, and put it in hands that will
+            keep the doors open.
           </p>
         </Reveal>
 
         <Reveal delay={0.15}>
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
             <Magnetic strength={0.5}>
-              <Button size="lg" className="group">
-                Start your profile — free
-                <ArrowRight className="transition-transform duration-200 group-hover:translate-x-1" />
-              </Button>
+              <Link href="/signup">
+                <Button size="lg" className="group">
+                  Start your free trial
+                  <ArrowRight className="transition-transform duration-200 group-hover:translate-x-1" />
+                </Button>
+              </Link>
             </Magnetic>
-            <Button size="lg" variant="ghost">
-              Talk to a succession advisor
-            </Button>
+            <Link href="/compare">
+              <Button size="lg" variant="ghost">
+                See what waiting costs
+              </Button>
+            </Link>
           </div>
           <p className="mt-5 font-mono text-xs text-ink-faint">
-            Built on Cloudflare · Your documents never train a public model
+            14-day free trial · You keep ownership of everything · We only win when you do
           </p>
         </Reveal>
       </div>

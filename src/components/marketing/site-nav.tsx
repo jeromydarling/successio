@@ -9,9 +9,10 @@ import { Magnetic } from "./motion-primitives";
 import { cn } from "@/lib/utils";
 
 const LINKS = [
-  { href: "#how", label: "How it works" },
-  { href: "#timeline", label: "The story" },
-  { href: "#verticals", label: "Trades" },
+  { href: "/why", label: "Why" },
+  { href: "/compare", label: "Compare" },
+  { href: "/#how", label: "How it works" },
+  { href: "/pricing", label: "Pricing" },
   { href: "/demo", label: "Live demo" },
 ];
 
@@ -63,7 +64,9 @@ export function SiteNav() {
 
         <div className="hidden md:block">
           <Magnetic strength={0.4}>
-            <Button size="sm">Start the profile</Button>
+            <Link href="/signup">
+              <Button size="sm">Start the profile</Button>
+            </Link>
           </Magnetic>
         </div>
 
@@ -95,9 +98,11 @@ export function SiteNav() {
               </Link>
             ))}
             <div className="p-2">
-              <Button size="sm" className="w-full">
-                Start the profile
-              </Button>
+              <Link href="/signup" onClick={() => setOpen(false)}>
+                <Button size="sm" className="w-full">
+                  Start the profile
+                </Button>
+              </Link>
             </div>
           </motion.div>
         )}

@@ -8,12 +8,13 @@ import {
   useMotionValue,
   useSpring,
 } from "framer-motion";
+import Link from "next/link";
 import { ArrowRight, FileText, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Magnetic } from "./motion-primitives";
 
-const HEADLINE = ["Pass", "the", "torch."];
-const HEADLINE_2 = ["Not", "the", "knowledge", "with", "it."];
+const HEADLINE = ["Your", "life's", "work,"];
+const HEADLINE_2 = ["passed", "on", "—", "not", "sold", "off."];
 
 export function Hero() {
   const ref = useRef<HTMLElement>(null);
@@ -73,7 +74,7 @@ export function Hero() {
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber opacity-75" />
               <span className="relative inline-flex size-1.5 rounded-full bg-amber" />
             </span>
-            2.8 million owners are retiring without a buyer in sight
+            A $5 trillion handoff is here — and most owners have no plan
           </motion.div>
 
           <h1 className="text-[clamp(2.6rem,6vw,4.6rem)] font-semibold leading-[0.98] tracking-tight text-ink">
@@ -88,7 +89,7 @@ export function Hero() {
                   key={w}
                   word={w}
                   delay={0.4 + i * 0.08}
-                  highlight={w === "knowledge"}
+                  highlight={w === "passed"}
                 />
               ))}
             </span>
@@ -100,9 +101,10 @@ export function Hero() {
             transition={{ duration: 0.7, delay: 0.85 }}
             className="mt-7 max-w-xl text-lg leading-relaxed text-ink-soft text-pretty"
           >
-            Thirty years of how-it-really-works lives in one person&apos;s head.
-            Successio gets it out — turning your shop&apos;s documents, drawings
-            and war stories into a profile a buyer can actually trust.
+            You spent decades building this — the customers who trust you, the
+            crew who knows the work, the things that only live in your head.
+            Successio gets it down on paper and passes it on whole: to a buyer,
+            your employees, or a local deal that keeps it rooted where it belongs.
           </motion.p>
 
           <motion.div
@@ -112,14 +114,18 @@ export function Hero() {
             className="mt-9 flex flex-wrap items-center gap-4"
           >
             <Magnetic strength={0.45}>
-              <Button size="lg" className="group">
-                Build your profile
-                <ArrowRight className="transition-transform duration-200 group-hover:translate-x-1" />
-              </Button>
+              <Link href="/signup">
+                <Button size="lg" className="group">
+                  Start your profile
+                  <ArrowRight className="transition-transform duration-200 group-hover:translate-x-1" />
+                </Button>
+              </Link>
             </Magnetic>
-            <Button size="lg" variant="outline">
-              See a live business
-            </Button>
+            <Link href="/demo">
+              <Button size="lg" variant="outline">
+                See a live business
+              </Button>
+            </Link>
           </motion.div>
         </motion.div>
 

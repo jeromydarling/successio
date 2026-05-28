@@ -2,16 +2,31 @@ import Link from "next/link";
 
 const COLUMNS = [
   {
-    title: "Platform",
-    links: ["Document vault", "Readiness score", "Knowledge capture", "Deal room"],
+    title: "Product",
+    links: [
+      { label: "How it works", href: "/#how" },
+      { label: "Compare", href: "/compare" },
+      { label: "Pricing", href: "/pricing" },
+      { label: "Live demo", href: "/demo" },
+    ],
   },
   {
-    title: "Trades",
-    links: ["Machine shops", "HVAC & plumbing", "Construction", "Trucking & ag"],
+    title: "Company",
+    links: [
+      { label: "Why we exist", href: "/why" },
+      { label: "The trades we serve", href: "/why" },
+      { label: "Contact", href: "/contact" },
+      { label: "Start free", href: "/signup" },
+    ],
   },
   {
     title: "Partners",
-    links: ["Trade associations", "Worker co-ops", "CDFIs & lenders", "SBA buyers"],
+    links: [
+      { label: "Trade associations", href: "/contact?plan=partner" },
+      { label: "Worker co-ops", href: "/why" },
+      { label: "CDFIs & lenders", href: "/contact?plan=partner" },
+      { label: "SBA buyers", href: "/signup?plan=new-owner" },
+    ],
   },
 ];
 
@@ -44,12 +59,12 @@ export function SiteFooter() {
               </h4>
               <ul className="mt-4 space-y-2.5">
                 {col.links.map((l) => (
-                  <li key={l}>
+                  <li key={l.label}>
                     <Link
-                      href="#"
+                      href={l.href}
                       className="text-sm text-ink-soft transition-colors hover:text-ink"
                     >
-                      {l}
+                      {l.label}
                     </Link>
                   </li>
                 ))}
