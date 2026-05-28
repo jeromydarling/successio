@@ -1,0 +1,150 @@
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------ *
+ * Successio design tokens
+ * Slate neutrals, Amber-500 primary (craft / warmth), Green success,
+ * Red for gaps. Inter for body, JetBrains Mono for extracted data.
+ * ------------------------------------------------------------------ */
+@theme {
+  --color-canvas: #0a0c10;
+  --color-canvas-soft: #0f1318;
+  --color-ink: #e7ecf3;
+  --color-ink-soft: #9aa6b6;
+  --color-ink-faint: #5b6472;
+
+  --color-amber: #f59e0b;
+  --color-amber-bright: #fbbf24;
+  --color-amber-deep: #b45309;
+
+  --color-edge: rgba(255, 255, 255, 0.08);
+  --color-edge-strong: rgba(255, 255, 255, 0.14);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono), ui-monospace, "JetBrains Mono", monospace;
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background-color: #0a0c10;
+    color: #e7ecf3;
+    font-family: var(--font-sans);
+    overflow-x: hidden;
+  }
+
+  ::selection {
+    background: #f59e0b;
+    color: #0a0c10;
+  }
+
+  /* Custom scrollbar that fits the industrial aesthetic */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #0a0c10;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #1c222b;
+    border-radius: 99px;
+    border: 2px solid #0a0c10;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #2a313c;
+  }
+}
+
+/* ---- Motion primitives used across the marketing surface ---- */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .text-pretty {
+    text-wrap: pretty;
+  }
+
+  /* Fine industrial grid backdrop */
+  .bg-grid {
+    background-image:
+      linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+    background-size: 56px 56px;
+  }
+
+  .bg-grid-fade {
+    -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 40%, transparent 100%);
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 40%, transparent 100%);
+  }
+
+  .marquee {
+    animation: marquee 38s linear infinite;
+  }
+  .marquee-slow {
+    animation: marquee 60s linear infinite;
+  }
+  .group:hover .marquee,
+  .group:hover .marquee-slow {
+    animation-play-state: paused;
+  }
+
+  @keyframes marquee {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+
+  .shimmer {
+    background: linear-gradient(
+      110deg,
+      transparent 30%,
+      rgba(251, 191, 36, 0.28) 50%,
+      transparent 70%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 3.4s ease-in-out infinite;
+  }
+  @keyframes shimmer {
+    from { background-position: 200% 0; }
+    to { background-position: -200% 0; }
+  }
+
+  @keyframes float-slow {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-14px); }
+  }
+  .float-slow {
+    animation: float-slow 7s ease-in-out infinite;
+  }
+}
+
+/* Respect users who ask for less motion: kill the ambient/looping CSS
+ * animations. Framer Motion components additionally honor this via the OS. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .marquee,
+  .marquee-slow,
+  .shimmer,
+  .float-slow {
+    animation: none !important;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

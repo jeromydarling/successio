@@ -600,3 +600,25 @@ Always fetch live docs before implementing integrations (do not rely on training
 
 16. [PDF support - Claude API Docs](https://platform.claude.com/docs/en/build-with-claude/pdf-support) - Process PDFs with Claude. Extract text, analyze charts, and understand visual content from your docu...
 
+---
+
+## 🔑 API Key Registry
+
+> **This section is the canonical home for all API keys and secrets — keep it at the very end of this file.**
+> **NEVER paste real secret values here.** This table is the *registry* (what exists, where it lives, who issues it). Real values live only in `.dev.vars` (local, gitignored) and Cloudflare encrypted secrets (production via `wrangler secret put <NAME>`). The app must fail loudly if any required key is missing — never hardcode a fallback.
+
+| Key | Purpose | Where set (local → prod) | Issuer / Console | Status |
+|---|---|---|---|---|
+| `ANTHROPIC_API_KEY` | Claude extraction + profile drafting (via AI Gateway) | `.dev.vars` → `wrangler secret` | console.anthropic.com | ⬜ not set |
+| `MISTRAL_API_KEY` | Primary OCR for scanned docs | `.dev.vars` → `wrangler secret` | console.mistral.ai | ⬜ not set |
+| `GOOGLE_AI_API_KEY` | Gemini 2.5 Flash OCR/extraction fallback | `.dev.vars` → `wrangler secret` | aistudio.google.com | ⬜ not set |
+| `CF_ACCOUNT_ID` | Cloudflare account scope for AI Gateway | `.dev.vars` → `[vars]` / dashboard | dash.cloudflare.com | ⬜ not set |
+| `CF_AI_GATEWAY_ID` | AI Gateway id (`successio-prod`) | `wrangler.toml [vars]` | dash.cloudflare.com → AI Gateway | ✅ `successio-prod` |
+| `JWT_SECRET` | Signs/validates user session JWTs (Workers KV) | `.dev.vars` → `wrangler secret` | self-generated (`openssl rand -hex 32`) | ⬜ not set |
+| `ENCRYPTION_KEY` | Encrypts PII fields at rest in D1 | `.dev.vars` → `wrangler secret` | self-generated (`openssl rand -hex 32`) | ⬜ not set |
+
+**Conventions**
+- New keys get added to this table **and** to `.dev.vars.example`. Update the **Status** column when a key is provisioned.
+- Cloudflare *bindings* (`DB`, `DOCUMENTS`, `VECTORS`, `AI`, `DOCUMENT_QUEUE`, Durable Objects, Workflows) are not secrets — they live in `wrangler.toml`, not here.
+- Provisioning of D1 / R2 / Vectorize / KV / AI Gateway is done through the **Cloudflare MCP server** (see below) rather than by hand. Always confirm before creating billable resources.
+
