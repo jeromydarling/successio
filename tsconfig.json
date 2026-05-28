@@ -15,6 +15,7 @@
     "incremental": true,
     "verbatimModuleSyntax": false,
     "plugins": [{ "name": "next" }],
+    "types": ["@cloudflare/workers-types", "node"],
     "paths": {
       "@/*": ["./src/*"]
     }

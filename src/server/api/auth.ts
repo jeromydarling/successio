@@ -1,0 +1,119 @@
+import { TRPCError } from "@trpc/server";
+import { z } from "zod";
+import { eq } from "drizzle-orm";
+import { router, publicProcedure, protectedProcedure } from "../trpc";
+import { users, organizations } from "@/db/schema";
+import {
+  hashPassword,
+  verifyPassword,
+  signSession,
+  makeSessionCookie,
+  clearSessionCookie,
+} from "@/lib/auth";
+import { signupSchema, loginSchema } from "@/types";
+
+function nanoid(len = 21) {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let id = "";
+  const bytes = crypto.getRandomValues(new Uint8Array(len));
+  for (const b of bytes) id += chars[b % chars.length];
+  return id;
+}
+
+export const authRouter = router({
+  signup: publicProcedure
+    .input(signupSchema)
+    .mutation(async ({ input, ctx }) => {
+      const existing = await ctx.db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.email, input.email.toLowerCase()))
+        .get();
+
+      if (existing) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "An account with this email already exists",
+        });
+      }
+
+      const orgId = nanoid();
+      const userId = nanoid();
+      const passwordHash = await hashPassword(input.password);
+
+      await ctx.db.insert(organizations).values({
+        id: orgId,
+        name: input.businessName,
+        vertical: input.vertical,
+      });
+
+      await ctx.db.insert(users).values({
+        id: userId,
+        orgId,
+        email: input.email.toLowerCase(),
+        name: input.name,
+        role: "owner",
+        passwordHash,
+      });
+
+      const token = await signSession(
+        { sub: userId, orgId, email: input.email.toLowerCase(), role: "owner" },
+        ctx.env.JWT_SECRET
+      );
+      const isSecure = ctx.env.ENVIRONMENT === "production";
+      const cookie = makeSessionCookie(token, isSecure);
+
+      return { userId, orgId, cookie };
+    }),
+
+  login: publicProcedure
+    .input(loginSchema)
+    .mutation(async ({ input, ctx }) => {
+      const user = await ctx.db
+        .select()
+        .from(users)
+        .where(eq(users.email, input.email.toLowerCase()))
+        .get();
+
+      if (!user) {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid credentials" });
+      }
+
+      const valid = await verifyPassword(input.password, user.passwordHash);
+      if (!valid) {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid credentials" });
+      }
+
+      const token = await signSession(
+        { sub: user.id, orgId: user.orgId, email: user.email, role: user.role },
+        ctx.env.JWT_SECRET
+      );
+      const isSecure = ctx.env.ENVIRONMENT === "production";
+      const cookie = makeSessionCookie(token, isSecure);
+
+      return { userId: user.id, orgId: user.orgId, cookie };
+    }),
+
+  logout: publicProcedure.mutation(() => {
+    return { cookie: clearSessionCookie() };
+  }),
+
+  me: protectedProcedure.query(async ({ ctx }) => {
+    const user = await ctx.db
+      .select({
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        role: users.role,
+        orgId: users.orgId,
+      })
+      .from(users)
+      .where(eq(users.id, ctx.session.sub))
+      .get();
+
+    if (!user) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
+    }
+    return user;
+  }),
+});
