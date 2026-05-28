@@ -21,7 +21,22 @@ import {
 } from "@/db/schema";
 import { makeGateway, MODELS } from "@/lib/ai-gateway";
 import { buildProfilePrompt } from "@/prompts/manufacturing/profile";
+import { renderProfilePdf } from "@/lib/pdf";
+import { presignR2Url, r2CredentialsFromEnv } from "@/lib/r2-presign";
 import { nanoid } from "@/lib/nanoid";
+
+const SECTION_LABELS: Record<string, string> = {
+  executive_summary:    "Executive Summary",
+  business_overview:    "Business Overview",
+  customer_overview:    "Customer Overview",
+  financial_highlights: "Financial Highlights",
+  operations:           "Operations",
+  team:                 "Team & People",
+  equipment_and_assets: "Equipment & Assets",
+  opportunity:          "The Opportunity",
+  reason_for_sale:      "Reason for Sale",
+};
+const SECTION_ORDER = Object.keys(SECTION_LABELS);
 
 // Short, URL-safe share token (12 chars is enough entropy for this use case)
 function shareToken() {
@@ -124,6 +139,45 @@ export const profilesRouter = router({
     })();
 
     return { ...profile, content };
+  }),
+
+  /** Render the latest profile to a PDF, store it in R2, return a download URL. */
+  exportPdf: protectedProcedure.mutation(async ({ ctx }) => {
+    const { orgId } = ctx.session;
+
+    const [profile, org] = await Promise.all([
+      ctx.db.select().from(businessProfiles).where(eq(businessProfiles.orgId, orgId)).orderBy(desc(businessProfiles.createdAt)).limit(1).get(),
+      ctx.db.select().from(organizations).where(eq(organizations.id, orgId)).get(),
+    ]);
+
+    if (!profile) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Generate a profile first" });
+
+    let content: Record<string, string> = {};
+    try { content = JSON.parse(profile.content); } catch { /* empty */ }
+
+    const sections = SECTION_ORDER
+      .filter((k) => content[k]?.trim())
+      .map((k) => ({ heading: SECTION_LABELS[k], body: content[k] }));
+
+    const subtitle = [org?.vertical, org?.location, org?.founded && `Established ${org.founded}`]
+      .filter(Boolean)
+      .join("  ·  ");
+
+    const bytes = renderProfilePdf({
+      orgName: org?.name ?? profile.title,
+      subtitle,
+      sections,
+    });
+
+    // Store in R2 and hand back a presigned GET URL.
+    const r2Key = `profiles/${orgId}/${profile.id}.pdf`;
+    await ctx.env.DOCUMENTS.put(r2Key, bytes, {
+      httpMetadata: { contentType: "application/pdf" },
+    });
+    await ctx.db.update(businessProfiles).set({ pdfR2Key: r2Key }).where(eq(businessProfiles.id, profile.id));
+
+    const downloadUrl = await presignR2Url(r2CredentialsFromEnv(ctx.env), "GET", r2Key, 3600);
+    return { downloadUrl };
   }),
 
   /** Create or retrieve a share token for a given tier. */

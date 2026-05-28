@@ -31,6 +31,7 @@ interface PipelineEnv {
   DOCUMENTS: R2Bucket;
   AI: Ai;
   VECTORS?: VectorizeIndex;
+  PROCESSING_STATE?: DurableObjectNamespace;
   CF_ACCOUNT_ID?: string;
   CF_AI_GATEWAY_ID: string;
   ANTHROPIC_API_KEY?: string;

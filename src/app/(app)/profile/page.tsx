@@ -84,6 +84,12 @@ export default function ProfilePage() {
     onSuccess: () => utils.profiles.listShareTokens.invalidate(),
   });
 
+  const exportPdfMutation = trpc.profiles.exportPdf.useMutation({
+    onSuccess: (data) => {
+      window.open(data.downloadUrl, "_blank", "noopener,noreferrer");
+    },
+  });
+
   const canGenerate = score && score.score >= 30;
 
   return (
@@ -107,18 +113,35 @@ export default function ProfilePage() {
                   <p className="mt-1 text-xs text-emerald-400">Profile generated</p>
                 )}
               </div>
-              <Button
-                onClick={() => generateMutation.mutate()}
-                disabled={generateMutation.isPending || !canGenerate}
-                size="sm"
-              >
-                {generateMutation.isPending ? (
-                  <RefreshCw className="size-4 animate-spin" />
-                ) : (
-                  <Share2 className="size-4" />
+              <div className="flex items-center gap-2">
+                {profile && (
+                  <Button
+                    onClick={() => exportPdfMutation.mutate()}
+                    disabled={exportPdfMutation.isPending}
+                    variant="outline"
+                    size="sm"
+                  >
+                    {exportPdfMutation.isPending ? (
+                      <RefreshCw className="size-4 animate-spin" />
+                    ) : (
+                      <Download className="size-4" />
+                    )}
+                    PDF
+                  </Button>
                 )}
-                {profile ? "Regenerate profile" : "Generate profile"}
-              </Button>
+                <Button
+                  onClick={() => generateMutation.mutate()}
+                  disabled={generateMutation.isPending || !canGenerate}
+                  size="sm"
+                >
+                  {generateMutation.isPending ? (
+                    <RefreshCw className="size-4 animate-spin" />
+                  ) : (
+                    <Share2 className="size-4" />
+                  )}
+                  {profile ? "Regenerate profile" : "Generate profile"}
+                </Button>
+              </div>
             </div>
             {!canGenerate && (
               <div className="mt-4 flex items-start gap-2 rounded-xl bg-amber/[0.06] px-4 py-3">

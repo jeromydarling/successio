@@ -14,7 +14,7 @@ import { nanoid } from "@/lib/nanoid";
 export async function recalculateScore(params: {
   orgId: string;
   vertical: string;
-  env: { DB: D1Database };
+  env: { DB: D1Database; PROCESSING_STATE?: DurableObjectNamespace };
 }): Promise<{ score: number }> {
   const { orgId, vertical, env } = params;
   const db = drizzle(env.DB, { schema });
@@ -90,7 +90,29 @@ export async function recalculateScore(params: {
     hasKeyPersonnel: emp >= 1,
   });
 
+  // Push a real-time update to any dashboard connected to this org's DO.
+  await broadcastScore(env.PROCESSING_STATE, orgId, score);
+
   return { score };
+}
+
+/** Notify the per-org Durable Object so connected dashboards refresh via SSE. */
+async function broadcastScore(
+  ns: DurableObjectNamespace | undefined,
+  orgId: string,
+  score: number
+): Promise<void> {
+  if (!ns) return;
+  try {
+    const stub = ns.get(ns.idFromName(`org_${orgId}`));
+    await stub.fetch("https://do/broadcast", {
+      method: "POST",
+      body: JSON.stringify({ type: "score", orgId, score, at: Date.now() }),
+    });
+  } catch (err) {
+    // Never let a notification failure break the pipeline.
+    console.warn("[score] broadcast failed:", err);
+  }
 }
 
 async function updateChecklist(

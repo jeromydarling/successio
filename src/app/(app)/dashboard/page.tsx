@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Upload,
@@ -29,15 +30,31 @@ const CATEGORY_META: Record<string, { Icon: React.ElementType; color: string }> 
 };
 
 export default function DashboardPage() {
-  // Poll every 8 seconds so the dashboard stays live during active processing
+  const utils = trpc.useUtils();
+
+  // Real-time updates via SSE from the org's Durable Object. Polling at a slow
+  // 30s cadence remains as a fallback if the stream is unavailable.
   const { data: score, dataUpdatedAt } = trpc.businesses.latestScore.useQuery(undefined, {
-    refetchInterval: 8_000,
+    refetchInterval: 30_000,
   });
   const { data: checklist = [] } = trpc.businesses.checklist.useQuery(undefined, {
-    refetchInterval: 8_000,
+    refetchInterval: 30_000,
   });
   const { data: docs } = trpc.documents.list.useQuery({ limit: 5 });
   const { data: org } = trpc.businesses.getOrg.useQuery();
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("EventSource" in window)) return;
+    const es = new EventSource("/api/processing-stream");
+    es.onmessage = () => {
+      // A document finished processing — refresh the live views.
+      utils.businesses.latestScore.invalidate();
+      utils.businesses.checklist.invalidate();
+      utils.documents.list.invalidate();
+    };
+    es.onerror = () => es.close();
+    return () => es.close();
+  }, [utils]);
 
   const pct = score?.score ?? 0;
   const breakdown: Record<string, number> = score?.breakdown
