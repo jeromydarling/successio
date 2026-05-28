@@ -15,6 +15,7 @@ export interface Context {
     CF_AI_GATEWAY_ID: string;
     DOCUMENT_QUEUE?: Queue;
     VECTORS?: VectorizeIndex;
+    PROCESSING_STATE?: DurableObjectNamespace;
     ENVIRONMENT: string;
   };
   session: SessionPayload | null;

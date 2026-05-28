@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { router, protectedProcedure } from "../trpc";
 import { documents, organizations, extractedEntities } from "@/db/schema";
 import { documentKey, detectFileType } from "@/lib/r2";
@@ -138,6 +138,72 @@ export const documentsRouter = router({
         .get();
       if (!doc) throw new TRPCError({ code: "NOT_FOUND" });
       return doc;
+    }),
+
+  /** Semantic search via Vectorize. Falls back to empty results if VECTORS not bound. */
+  semanticSearch: protectedProcedure
+    .input(z.object({ query: z.string().min(1).max(500) }))
+    .query(async ({ input, ctx }) => {
+      const { orgId } = ctx.session;
+
+      if (!ctx.env.VECTORS) {
+        return [];
+      }
+
+      // Embed the query using Workers AI
+      const embedResult = await (ctx.env.AI as any).run("@cf/baai/bge-base-en-v1.5", {
+        text: [input.query],
+      }) as { data: number[][] };
+
+      const queryVector = embedResult.data[0];
+      if (!queryVector) return [];
+
+      // Query Vectorize — filter by orgId via metadata
+      const results = await ctx.env.VECTORS.query(queryVector, {
+        topK: 10,
+        filter: { orgId },
+        returnMetadata: "all",
+      });
+
+      if (!results.matches || results.matches.length === 0) return [];
+
+      // Extract unique document IDs from vector metadata
+      const docIds = [...new Set(
+        results.matches
+          .map((m: any) => m.metadata?.documentId as string | undefined)
+          .filter(Boolean)
+      )] as string[];
+
+      if (docIds.length === 0) return [];
+
+      // Fetch document records
+      const docs = await ctx.db
+        .select({
+          id: documents.id,
+          originalName: documents.originalName,
+          mimeType: documents.mimeType,
+          fileType: documents.fileType,
+          documentType: documents.documentType,
+          status: documents.status,
+          ocrConfidence: documents.ocrConfidence,
+          sizeBytes: documents.sizeBytes,
+          createdAt: documents.createdAt,
+        })
+        .from(documents)
+        .where(and(
+          eq(documents.orgId, orgId),
+          inArray(documents.id, docIds)
+        ))
+        .all();
+
+      // Attach relevance scores
+      const scoreMap = new Map(
+        results.matches.map((m: any) => [m.metadata?.documentId as string, m.score as number])
+      );
+
+      return docs
+        .map((d) => ({ ...d, relevanceScore: scoreMap.get(d.id) ?? 0 }))
+        .sort((a, b) => b.relevanceScore - a.relevanceScore);
     }),
 
   /** Returns full document + extracted entities for the vault slide-over. */

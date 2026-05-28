@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useDeferredValue } from "react";
 import { motion } from "framer-motion";
-import { Search, FileText, FileSpreadsheet, FileAudio, Image, File } from "lucide-react";
+import { Search, FileText, FileSpreadsheet, FileAudio, Image, File, Sparkles } from "lucide-react";
 import { AppTopNav } from "@/components/app/app-topnav";
 import { DocumentSlideOver } from "@/components/vault/document-slide-over";
 import { trpc } from "@/lib/trpc-client";
@@ -19,18 +19,43 @@ const STATUS_FILTERS = [
   "all", "complete", "needs_review", "extracting", "queued", "failed",
 ] as const;
 
+type DocItem = {
+  id: string;
+  originalName: string;
+  mimeType: string;
+  fileType?: string | null;
+  documentType?: string | null;
+  status: string;
+  ocrConfidence?: number | null;
+  sizeBytes: number;
+  createdAt?: unknown;
+  relevanceScore?: number;
+};
+
 export default function VaultPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
 
-  const { data: docs = [], isLoading } = trpc.documents.list.useQuery({ limit: 100 });
+  const deferredSearch = useDeferredValue(search);
+  const isSemanticSearch = deferredSearch.length >= 3;
 
-  const filtered = docs.filter((d) => {
-    const matchSearch = d.originalName.toLowerCase().includes(search.toLowerCase());
-    const matchStatus = statusFilter === "all" || d.status === statusFilter;
-    return matchSearch && matchStatus;
-  });
+  const { data: allDocs = [], isLoading: allLoading } = trpc.documents.list.useQuery({ limit: 100 });
+  const { data: semanticResults = [], isFetching: semanticLoading } = trpc.documents.semanticSearch.useQuery(
+    { query: deferredSearch },
+    { enabled: isSemanticSearch }
+  );
+
+  const isLoading = allLoading || (isSemanticSearch && semanticLoading);
+
+  // Determine which docs to show
+  const docs: DocItem[] = isSemanticSearch
+    ? semanticResults
+    : allDocs.filter((d) => {
+        const matchSearch = !search || d.originalName.toLowerCase().includes(search.toLowerCase());
+        const matchStatus = statusFilter === "all" || d.status === statusFilter;
+        return matchSearch && matchStatus;
+      });
 
   return (
     <>
@@ -40,31 +65,49 @@ export default function VaultPage() {
           {/* Search + filter bar */}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div className="relative flex-1">
-              <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-ink-faint" />
+              {isSemanticSearch ? (
+                <Sparkles className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-amber/70" />
+              ) : (
+                <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-ink-faint" />
+              )}
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search documents…"
+                placeholder="Search documents… (type 3+ chars for AI search)"
                 className="input-base pl-10"
               />
             </div>
-            <div className="flex gap-1.5 flex-wrap">
-              {STATUS_FILTERS.map((s) => (
-                <button
-                  key={s}
-                  onClick={() => setStatusFilter(s)}
-                  className={cn(
-                    "rounded-full border px-3 py-1.5 text-xs font-medium capitalize transition-all",
-                    statusFilter === s
-                      ? "border-amber/40 bg-amber/10 text-amber-bright"
-                      : "border-edge text-ink-soft hover:border-edge-strong hover:text-ink"
-                  )}
-                >
-                  {s === "all" ? "All" : s.replace("_", " ")}
-                </button>
-              ))}
-            </div>
+            {!isSemanticSearch && (
+              <div className="flex gap-1.5 flex-wrap">
+                {STATUS_FILTERS.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setStatusFilter(s)}
+                    className={cn(
+                      "rounded-full border px-3 py-1.5 text-xs font-medium capitalize transition-all",
+                      statusFilter === s
+                        ? "border-amber/40 bg-amber/10 text-amber-bright"
+                        : "border-edge text-ink-soft hover:border-edge-strong hover:text-ink"
+                    )}
+                  >
+                    {s === "all" ? "All" : s.replace("_", " ")}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
+
+          {/* Semantic search indicator */}
+          {isSemanticSearch && (
+            <motion.p
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-center gap-2 text-xs text-amber/70"
+            >
+              <Sparkles className="size-3" />
+              Searching by meaning across all your documents
+            </motion.p>
+          )}
 
           {/* Grid */}
           {isLoading ? (
@@ -73,7 +116,7 @@ export default function VaultPage() {
                 <div key={i} className="h-36 animate-pulse rounded-xl bg-white/[0.03]" />
               ))}
             </div>
-          ) : filtered.length === 0 ? (
+          ) : docs.length === 0 ? (
             <div className="py-20 text-center">
               <FileText className="mx-auto size-10 text-ink-faint" />
               <p className="mt-3 text-sm text-ink-soft">
@@ -87,7 +130,7 @@ export default function VaultPage() {
               animate="show"
               variants={{ show: { transition: { staggerChildren: 0.04 } } }}
             >
-              {filtered.map((doc) => {
+              {docs.map((doc) => {
                 const Icon = FILE_ICONS[doc.fileType ?? ""] ?? File;
                 return (
                   <motion.article
@@ -99,7 +142,14 @@ export default function VaultPage() {
                     onClick={() => setSelectedDocId(doc.id)}
                     className="group cursor-pointer rounded-xl border border-edge bg-canvas-soft/40 p-4 transition-colors hover:border-amber/30 hover:bg-canvas-soft/60"
                   >
-                    <Icon className="size-7 text-amber/70" />
+                    <div className="flex items-start justify-between">
+                      <Icon className="size-7 text-amber/70" />
+                      {doc.relevanceScore != null && (
+                        <span className="rounded-full border border-amber/20 bg-amber/5 px-1.5 py-0.5 font-mono text-[10px] text-amber/70">
+                          {Math.round(doc.relevanceScore * 100)}%
+                        </span>
+                      )}
+                    </div>
                     <p className="mt-3 truncate text-sm font-medium text-ink">
                       {doc.originalName}
                     </p>
