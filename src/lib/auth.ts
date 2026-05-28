@@ -8,6 +8,7 @@ const sessionPayloadSchema = z.object({
   orgId: z.string(),
   email: z.string().email(),
   role: z.string(),
+  jti: z.string().optional(), // token id — used for KV revocation
   iat: z.number().optional(),
   exp: z.number().optional(),
 });
@@ -19,14 +20,39 @@ function getKey(secret: string) {
 }
 
 export async function signSession(
-  payload: Omit<SessionPayload, "iat" | "exp">,
+  payload: Omit<SessionPayload, "iat" | "exp" | "jti">,
   jwtSecret: string
 ): Promise<string> {
-  return new SignJWT(payload as JWTPayload)
+  // Every token gets a unique id so it can be individually revoked via KV.
+  const jti = crypto.randomUUID();
+  return new SignJWT({ ...payload, jti } as JWTPayload)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
+    .setJti(jti)
     .setExpirationTime(`${SESSION_DURATION_SECONDS}s`)
     .sign(getKey(jwtSecret));
+}
+
+/** KV key prefix for revoked token ids. */
+const REVOKED_PREFIX = "revoked:";
+
+/** Mark a token id as revoked. TTL matches the remaining session lifetime. */
+export async function revokeSession(
+  kv: KVNamespace,
+  jti: string
+): Promise<void> {
+  await kv.put(`${REVOKED_PREFIX}${jti}`, "1", {
+    expirationTtl: SESSION_DURATION_SECONDS,
+  });
+}
+
+/** Returns true if the token id has been revoked. */
+export async function isSessionRevoked(
+  kv: KVNamespace,
+  jti: string
+): Promise<boolean> {
+  const hit = await kv.get(`${REVOKED_PREFIX}${jti}`);
+  return hit !== null;
 }
 
 export async function verifySession(
@@ -51,7 +77,7 @@ export function makeSessionCookie(token: string, secure: boolean): string {
   const attrs = [
     `session=${token}`,
     `HttpOnly`,
-    `SameSite=Lax`,
+    `SameSite=Strict`,
     `Path=/`,
     `Max-Age=${SESSION_DURATION_SECONDS}`,
     secure ? "Secure" : "",
@@ -62,7 +88,7 @@ export function makeSessionCookie(token: string, secure: boolean): string {
 }
 
 export function clearSessionCookie(): string {
-  return "session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0";
+  return "session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0";
 }
 
 /** bcrypt isn't available in workerd — use PBKDF2 via SubtleCrypto instead. */

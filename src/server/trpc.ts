@@ -1,6 +1,6 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { verifySession, getTokenFromCookie } from "@/lib/auth";
+import { verifySession, getTokenFromCookie, isSessionRevoked } from "@/lib/auth";
 import type { SessionPayload } from "@/lib/auth";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import type * as schema from "@/db/schema";
@@ -16,6 +16,10 @@ export interface Context {
     DOCUMENT_QUEUE?: Queue;
     VECTORS?: VectorizeIndex;
     PROCESSING_STATE?: DurableObjectNamespace;
+    SESSIONS?: KVNamespace;
+    R2_ACCESS_KEY_ID?: string;
+    R2_SECRET_ACCESS_KEY?: string;
+    R2_BUCKET_NAME?: string;
     ENVIRONMENT: string;
   };
   session: SessionPayload | null;
@@ -45,7 +49,14 @@ export async function createContext(
 
   const cookie = req.headers.get("cookie");
   const token = getTokenFromCookie(cookie);
-  const session = token ? await verifySession(token, env.JWT_SECRET) : null;
+  let session = token ? await verifySession(token, env.JWT_SECRET) : null;
+
+  // Honour KV revocation list (logout / forced sign-out) when available.
+  if (session?.jti && env.SESSIONS) {
+    if (await isSessionRevoked(env.SESSIONS, session.jti)) {
+      session = null;
+    }
+  }
 
   return {
     db: db as DrizzleD1Database<typeof schema>,

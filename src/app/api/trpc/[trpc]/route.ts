@@ -3,7 +3,31 @@ import { appRouter } from "@/server/api/root";
 import { createContext } from "@/server/trpc";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 
+/**
+ * CSRF defense: reject cross-origin state-changing requests. tRPC mutations are
+ * POSTs, so we require the Origin (or Referer) to match the request host. This
+ * complements the SameSite=Strict session cookie.
+ */
+function isCrossOrigin(req: Request): boolean {
+  if (req.method === "GET" || req.method === "HEAD") return false;
+  const host = req.headers.get("host");
+  const origin = req.headers.get("origin") ?? req.headers.get("referer");
+  if (!origin) return false; // non-browser client (no Origin) — allow
+  try {
+    return new URL(origin).host !== host;
+  } catch {
+    return true;
+  }
+}
+
 async function handler(req: Request): Promise<Response> {
+  if (isCrossOrigin(req)) {
+    return Response.json(
+      { error: "Cross-origin request blocked" },
+      { status: 403 }
+    );
+  }
+
   // In production (Cloudflare Workers), bindings come from the runtime context.
   // In local Next.js dev, they may be absent — the handler degrades gracefully.
   let env: Record<string, unknown>;

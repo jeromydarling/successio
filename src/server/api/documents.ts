@@ -4,6 +4,7 @@ import { eq, and, desc, inArray } from "drizzle-orm";
 import { router, protectedProcedure } from "../trpc";
 import { documents, organizations, extractedEntities } from "@/db/schema";
 import { documentKey, detectFileType } from "@/lib/r2";
+import { presignR2Url, r2CredentialsFromEnv } from "@/lib/r2-presign";
 import { uploadRequestSchema, documentJobSchema } from "@/types";
 import type { Vertical } from "@/lib/verticals";
 import { nanoid } from "@/lib/nanoid";
@@ -31,12 +32,13 @@ export const documentsRouter = router({
         status: "queued",
       });
 
-      // Generate presigned PUT URL (1 hour)
-      const uploadUrl = await (ctx.env.DOCUMENTS as any).createPresignedUrl?.(
+      // Generate a real presigned PUT URL (1 hour) via R2's S3 API.
+      const uploadUrl = await presignR2Url(
+        r2CredentialsFromEnv(ctx.env),
         "PUT",
         r2Key,
-        { expiresIn: 3600 }
-      ) ?? `https://r2-upload-placeholder.invalid/${r2Key}`;
+        3600
+      );
 
       return { documentId, uploadUrl, r2Key };
     }),

@@ -10,6 +10,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { router, protectedProcedure } from "../trpc";
 import { processes, organizations } from "@/db/schema";
 import { makeGateway, MODELS } from "@/lib/ai-gateway";
+import { presignR2Url, r2CredentialsFromEnv } from "@/lib/r2-presign";
 import { buildSopPrompt } from "@/prompts/manufacturing/sop";
 import { nanoid } from "@/lib/nanoid";
 
@@ -24,16 +25,18 @@ const sopSchema = z.object({
 export const knowledgeRouter = router({
   /** Step 1: Get a presigned URL to PUT audio directly to R2. */
   requestAudioUpload: protectedProcedure
-    .input(z.object({ filename: z.string(), mimeType: z.string() }))
+    .input(z.object({ filename: z.string().min(1).max(255), mimeType: z.string() }))
     .mutation(async ({ input, ctx }) => {
       const { orgId } = ctx.session;
-      const r2Key = `audio/${orgId}/${nanoid()}-${input.filename}`;
+      const safe = input.filename.replace(/[^a-zA-Z0-9._\-]/g, "_").slice(0, 200);
+      const r2Key = `audio/${orgId}/${nanoid()}-${safe}`;
 
-      const uploadUrl = await (ctx.env.DOCUMENTS as any).createPresignedUrl?.(
+      const uploadUrl = await presignR2Url(
+        r2CredentialsFromEnv(ctx.env),
         "PUT",
         r2Key,
-        { expiresIn: 3600 }
-      ) ?? `https://r2-upload-placeholder.invalid/${r2Key}`;
+        3600
+      );
 
       return { r2Key, uploadUrl };
     }),

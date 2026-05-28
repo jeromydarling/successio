@@ -1,26 +1,64 @@
 /**
  * Public API: GET /api/share/[token]
- * POST /api/share/[token] — log a view (NDA: name+email body)
+ * POST /api/share/[token] — accept NDA (name+email) and log a view.
  * No auth required — token acts as the credential.
+ *
+ * Security:
+ *  - Confidential (non-public) sections are NEVER returned by GET. The full
+ *    payload is only released by POST after name+email are submitted, so the
+ *    NDA gate is enforced server-side, not in the browser.
+ *  - Visitor IPs are stored only as a SHA-256 hash.
+ *  - Both verbs are rate-limited per IP when a KV namespace is available.
  */
 
 import { drizzle } from "drizzle-orm/d1";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import * as schema from "@/db/schema";
 import { nanoid } from "@/lib/nanoid";
+import { rateLimit, sha256Hex } from "@/lib/rate-limit";
 
-async function getDb() {
+interface ShareEnv {
+  DB: D1Database;
+  SESSIONS?: KVNamespace;
+}
+
+async function getEnv(): Promise<ShareEnv> {
   const ctx = await getCloudflareContext();
-  return drizzle((ctx.env as any).DB, { schema });
+  return ctx.env as unknown as ShareEnv;
+}
+
+function clientIp(req: Request): string {
+  return (
+    req.headers.get("cf-connecting-ip") ??
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    "unknown"
+  );
+}
+
+async function checkRate(
+  env: ShareEnv,
+  req: Request,
+  bucket: string,
+  limit: number
+): Promise<boolean> {
+  if (!env.SESSIONS) return true; // no KV bound — skip limiting
+  const ipHash = await sha256Hex(clientIp(req));
+  const { allowed } = await rateLimit(env.SESSIONS, `${bucket}:${ipHash}`, limit, 60);
+  return allowed;
 }
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ token: string }> }
 ) {
   const { token } = await params;
-  const db = await getDb();
+  const env = await getEnv();
+  const db = drizzle(env.DB, { schema });
+
+  if (!(await checkRate(env, req, "share-get", 60))) {
+    return Response.json({ error: "Too many requests" }, { status: 429 });
+  }
 
   const shareToken = await db
     .select()
@@ -32,17 +70,14 @@ export async function GET(
     return Response.json({ error: "Invalid or expired link" }, { status: 404 });
   }
 
-  // Check expiry
   if (shareToken.expiresAt && new Date(shareToken.expiresAt) < new Date()) {
     return Response.json({ error: "This link has expired" }, { status: 410 });
   }
 
-  // Check view limits
   if (shareToken.maxViews && shareToken.viewCount >= shareToken.maxViews) {
     return Response.json({ error: "View limit reached" }, { status: 410 });
   }
 
-  // Load profile
   const profile = await db
     .select()
     .from(schema.businessProfiles)
@@ -53,7 +88,6 @@ export async function GET(
     return Response.json({ error: "Profile not found" }, { status: 404 });
   }
 
-  // Load org
   const org = await db
     .select()
     .from(schema.organizations)
@@ -63,19 +97,23 @@ export async function GET(
   let content: Record<string, string> = {};
   try { content = JSON.parse(profile.content); } catch { /* empty */ }
 
-  // Filter content by tier
-  const filtered = filterByTier(content, shareToken.tier);
+  const isPublic = shareToken.tier === "public";
+
+  // GET only ever returns the public/teaser subset. Confidential sections are
+  // released exclusively by POST after the NDA gate is satisfied.
+  const teaser = filterByTier(content, "public");
 
   return Response.json({
     tier: shareToken.tier,
+    requiresNda: !isPublic,
     org: {
       name: org?.name,
       vertical: org?.vertical,
       location: org?.location,
       founded: org?.founded,
-      employeeCount: shareToken.tier !== "public" ? org?.employeeCount : undefined,
+      // employeeCount is confidential — withheld until NDA is accepted
     },
-    profile: filtered,
+    profile: teaser,
     tokenId: token,
   });
 }
@@ -85,7 +123,12 @@ export async function POST(
   { params }: { params: Promise<{ token: string }> }
 ) {
   const { token } = await params;
-  const db = await getDb();
+  const env = await getEnv();
+  const db = drizzle(env.DB, { schema });
+
+  if (!(await checkRate(env, req, "share-post", 20))) {
+    return Response.json({ error: "Too many requests" }, { status: 429 });
+  }
 
   const shareToken = await db
     .select()
@@ -97,16 +140,33 @@ export async function POST(
     return Response.json({ error: "Invalid link" }, { status: 404 });
   }
 
+  if (shareToken.expiresAt && new Date(shareToken.expiresAt) < new Date()) {
+    return Response.json({ error: "This link has expired" }, { status: 410 });
+  }
+
   let body: { name?: string; email?: string; durationSeconds?: number } = {};
   try { body = await req.json(); } catch { /* ignore */ }
 
-  // Log the view
+  const isPublic = shareToken.tier === "public";
+  const ndaSatisfied = Boolean(body.name && body.email);
+
+  // Non-public tiers require name + email before any confidential data flows.
+  if (!isPublic && !ndaSatisfied) {
+    return Response.json(
+      { error: "Name and email are required to view this confidential profile" },
+      { status: 403 }
+    );
+  }
+
+  const ipHash = await sha256Hex(clientIp(req));
+
   await db.insert(schema.shareViews).values({
     id: nanoid(),
     tokenId: token,
     orgId: shareToken.orgId,
     viewerName: body.name ?? null,
     viewerEmail: body.email ?? null,
+    ipHash,
     durationSeconds: body.durationSeconds ?? null,
   });
 
@@ -116,15 +176,41 @@ export async function POST(
     .set({ viewCount: sql`view_count + 1` })
     .where(eq(schema.shareTokens.id, token));
 
-  return Response.json({ success: true });
+  // Release the tier-appropriate confidential payload now that the gate passed.
+  const profile = await db
+    .select()
+    .from(schema.businessProfiles)
+    .where(eq(schema.businessProfiles.id, shareToken.profileId))
+    .get();
+
+  const org = await db
+    .select()
+    .from(schema.organizations)
+    .where(eq(schema.organizations.id, shareToken.orgId))
+    .get();
+
+  let content: Record<string, string> = {};
+  try { if (profile) content = JSON.parse(profile.content); } catch { /* empty */ }
+
+  return Response.json({
+    success: true,
+    tier: shareToken.tier,
+    org: {
+      name: org?.name,
+      vertical: org?.vertical,
+      location: org?.location,
+      founded: org?.founded,
+      employeeCount: isPublic ? undefined : org?.employeeCount,
+    },
+    profile: filterByTier(content, shareToken.tier),
+  });
 }
 
 function filterByTier(content: Record<string, string>, tier: string): Record<string, string> {
   const publicKeys = ["executive_summary", "business_overview", "opportunity"];
   const ndaKeys = [...publicKeys, "customer_overview", "financial_highlights", "operations", "team", "equipment_and_assets", "reason_for_sale"];
-  const fullKeys = ndaKeys; // lender/buyer get everything
 
-  const allowed = tier === "public" ? publicKeys : ndaKeys;
+  const allowed = tier === "public" ? publicKeys : ndaKeys; // lender/buyer get everything in ndaKeys
   return Object.fromEntries(
     Object.entries(content).filter(([k]) => allowed.includes(k))
   );

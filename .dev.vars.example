@@ -18,3 +18,9 @@ CF_AI_GATEWAY_ID=successio-prod
 # App secrets
 JWT_SECRET=
 ENCRYPTION_KEY=
+
+# R2 S3-API credentials (Cloudflare dashboard → R2 → Manage API tokens)
+# Used to generate presigned upload/download URLs for direct browser ↔ R2 transfer.
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+R2_BUCKET_NAME=successio-documents

@@ -616,6 +616,8 @@ Always fetch live docs before implementing integrations (do not rely on training
 | `CF_AI_GATEWAY_ID` | AI Gateway id (`successio-prod`) | `wrangler.toml [vars]` | dash.cloudflare.com → AI Gateway | ✅ `successio-prod` |
 | `JWT_SECRET` | Signs/validates user session JWTs (Workers KV) | `.dev.vars` → `wrangler secret` | self-generated (`openssl rand -hex 32`) | ⬜ not set |
 | `ENCRYPTION_KEY` | Encrypts PII fields at rest in D1 | `.dev.vars` → `wrangler secret` | self-generated (`openssl rand -hex 32`) | ⬜ not set |
+| `R2_ACCESS_KEY_ID` | R2 S3-API key id for presigned upload/download URLs | `.dev.vars` → `wrangler secret` | dash.cloudflare.com → R2 → Manage API tokens | ⬜ not set |
+| `R2_SECRET_ACCESS_KEY` | R2 S3-API secret for presigned upload/download URLs | `.dev.vars` → `wrangler secret` | dash.cloudflare.com → R2 → Manage API tokens | ⬜ not set |
 
 **Conventions**
 - New keys get added to this table **and** to `.dev.vars.example`. Update the **Status** column when a key is provisioned.

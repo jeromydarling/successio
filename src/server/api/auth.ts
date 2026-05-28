@@ -9,6 +9,7 @@ import {
   signSession,
   makeSessionCookie,
   clearSessionCookie,
+  revokeSession,
 } from "@/lib/auth";
 import { signupSchema, loginSchema } from "@/types";
 import { nanoid } from "@/lib/nanoid";
@@ -87,7 +88,11 @@ export const authRouter = router({
       return { userId: user.id, orgId: user.orgId, cookie };
     }),
 
-  logout: publicProcedure.mutation(() => {
+  logout: publicProcedure.mutation(async ({ ctx }) => {
+    // Revoke the current token id so the JWT can't be replayed before expiry.
+    if (ctx.session?.jti && ctx.env.SESSIONS) {
+      await revokeSession(ctx.env.SESSIONS, ctx.session.jti);
+    }
     return { cookie: clearSessionCookie() };
   }),
 

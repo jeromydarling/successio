@@ -45,11 +45,17 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
   }, [params]);
 
   const logView = useCallback(async (tok: string, extra?: { name?: string; email?: string }) => {
-    await fetch(`/api/share/${tok}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(extra ?? {}),
-    }).catch(() => {});
+    try {
+      const res = await fetch(`/api/share/${tok}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(extra ?? {}),
+      });
+      if (!res.ok) return null;
+      return (await res.json()) as { profile?: Record<string, string>; org?: ShareData["org"] };
+    } catch {
+      return null;
+    }
   }, []);
 
   useEffect(() => {
@@ -71,7 +77,15 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
   const submitNda = async () => {
     if (!token || !ndaName || !ndaEmail) return;
     setNdaSubmitting(true);
-    await logView(token, { name: ndaName, email: ndaEmail });
+    // The server releases the full confidential payload only in this response.
+    const result = await logView(token, { name: ndaName, email: ndaEmail });
+    if (result?.profile) {
+      setData((prev) =>
+        prev
+          ? { ...prev, profile: result.profile!, org: { ...prev.org, ...result.org } }
+          : prev
+      );
+    }
     setNdaAccepted(true);
     setNdaSubmitting(false);
   };

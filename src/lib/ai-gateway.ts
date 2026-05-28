@@ -185,6 +185,11 @@ export function makeGateway(env: {
   GOOGLE_AI_API_KEY?: string;
   MISTRAL_API_KEY?: string;
 }): AIGateway {
-  const accountId = env.CF_ACCOUNT_ID ?? "f84f7181c051be0040e972dcad48e697";
-  return new AIGateway(accountId, env.CF_AI_GATEWAY_ID, env);
+  if (!env.CF_ACCOUNT_ID) {
+    // Fail loudly — never silently fall back to a hardcoded account.
+    throw new Error(
+      "[ai-gateway] CF_ACCOUNT_ID is not set. Configure it in wrangler.toml [vars] or as a secret."
+    );
+  }
+  return new AIGateway(env.CF_ACCOUNT_ID, env.CF_AI_GATEWAY_ID, env);
 }
