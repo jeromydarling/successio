@@ -4,6 +4,7 @@ import { documentsRouter } from "./documents";
 import { businessesRouter } from "./businesses";
 import { knowledgeRouter } from "./knowledge";
 import { profilesRouter } from "./profiles";
+import { adminRouter } from "./admin";
 
 export const appRouter = router({
   auth: authRouter,
@@ -11,6 +12,7 @@ export const appRouter = router({
   businesses: businessesRouter,
   knowledge: knowledgeRouter,
   profiles: profilesRouter,
+  admin: adminRouter,
 });
 
 export type AppRouter = typeof appRouter;

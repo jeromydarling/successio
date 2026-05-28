@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Share2, Lock, Globe, Building2, Copy, Check,
   RefreshCw, Eye, Trash2, AlertTriangle, ChevronDown, ChevronUp,
+  Download, Users2, ExternalLink,
 } from "lucide-react";
 import { AppTopNav } from "@/components/app/app-topnav";
 import { Button } from "@/components/ui/button";
@@ -258,6 +259,52 @@ export default function ProfilePage() {
               })()}
             </div>
           </div>
+
+          {/* Communis worker co-op CTA */}
+          <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] p-5">
+            <div className="flex items-start gap-4">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10">
+                <Users2 className="size-5 text-emerald-400" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-sm font-semibold text-ink">Worker Co-op Acquisition</h3>
+                <p className="mt-1 text-xs leading-relaxed text-ink-soft">
+                  Interested in a worker buyout? Communis connects retiring owners with employee ownership
+                  pathways — ESOPs, co-ops, and worker ownership transitions. Keep the business in the hands
+                  of the people who built it.
+                </p>
+                <a
+                  href="https://communis.coop"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-emerald-400 hover:text-emerald-300"
+                >
+                  Explore worker co-op pathways <ExternalLink className="size-3" />
+                </a>
+              </div>
+            </div>
+          </div>
+
+          {/* Lender package download (for lender-tier tokens) */}
+          {tokens.some((t) => t.tier === "lender") && (
+            <div className="rounded-2xl border border-violet-500/20 bg-violet-500/[0.04] p-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-ink">CDFI / SBA Lender Package</h3>
+                  <p className="mt-1 text-xs text-ink-soft">
+                    Full JSON bundle: profile narrative, financials, customers, equipment, and document index.
+                  </p>
+                </div>
+                <a
+                  href={`/api/lender-package/${tokens.find((t) => t.tier === "lender")?.id}`}
+                  download
+                  className="inline-flex items-center gap-2 rounded-lg bg-violet-500/10 px-4 py-2 text-xs font-medium text-violet-400 transition-colors hover:bg-violet-500/20"
+                >
+                  <Download className="size-4" /> Download
+                </a>
+              </div>
+            </div>
+          )}
 
           {/* Access audit log */}
           <section>
