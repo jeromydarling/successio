@@ -7,36 +7,55 @@ import {
   Upload,
   FolderOpen,
   Mic,
+  History,
   FileText,
   Settings,
   ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { trpc } from "@/lib/trpc-client";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/upload", label: "Upload", icon: Upload },
   { href: "/vault", label: "Document Vault", icon: FolderOpen },
   { href: "/knowledge", label: "Knowledge", icon: Mic },
+  { href: "/history", label: "History", icon: History },
   { href: "/profile", label: "Deal Room", icon: FileText },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 export function AppSidebar() {
   const pathname = usePathname();
+  const { data: assoc } = trpc.config.association.useQuery(undefined, {
+    staleTime: Infinity,
+  });
 
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-edge bg-canvas-soft/40">
-      {/* Logo */}
+      {/* Logo / white-label branding */}
       <div className="flex items-center gap-2.5 border-b border-edge px-5 py-5">
-        <span className="flex size-8 items-center justify-center rounded-lg bg-amber/10 ring-1 ring-amber/30">
-          <svg viewBox="0 0 24 24" className="size-5" fill="none">
-            <path d="M8 14a4 4 0 1 1 8 0" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" />
-            <path d="M12 14v6" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" />
-            <circle cx="12" cy="6" r="2.5" fill="#fbbf24" />
-          </svg>
-        </span>
-        <span className="text-sm font-semibold text-ink">Successio</span>
+        {assoc?.logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={assoc.logoUrl} alt={assoc.name} className="size-8 rounded-lg object-contain" />
+        ) : (
+          <span
+            className="flex size-8 items-center justify-center rounded-lg bg-amber/10 ring-1 ring-amber/30"
+            style={assoc?.isConfigured ? { backgroundColor: `${assoc.primaryColor}1a`, boxShadow: `inset 0 0 0 1px ${assoc.primaryColor}55` } : undefined}
+          >
+            <svg viewBox="0 0 24 24" className="size-5" fill="none">
+              <path d="M8 14a4 4 0 1 1 8 0" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" />
+              <path d="M12 14v6" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" />
+              <circle cx="12" cy="6" r="2.5" fill="#fbbf24" />
+            </svg>
+          </span>
+        )}
+        <div className="min-w-0">
+          <span className="block truncate text-sm font-semibold text-ink">{assoc?.name ?? "Successio"}</span>
+          {assoc?.isConfigured && (
+            <span className="block truncate text-[10px] text-ink-faint">on Successio</span>
+          )}
+        </div>
       </div>
 
       {/* Nav */}

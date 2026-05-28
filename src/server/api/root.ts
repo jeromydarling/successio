@@ -5,6 +5,8 @@ import { businessesRouter } from "./businesses";
 import { knowledgeRouter } from "./knowledge";
 import { profilesRouter } from "./profiles";
 import { adminRouter } from "./admin";
+import { historyRouter } from "./history";
+import { configRouter } from "./config";
 
 export const appRouter = router({
   auth: authRouter,
@@ -13,6 +15,8 @@ export const appRouter = router({
   knowledge: knowledgeRouter,
   profiles: profilesRouter,
   admin: adminRouter,
+  history: historyRouter,
+  config: configRouter,
 });
 
 export type AppRouter = typeof appRouter;
