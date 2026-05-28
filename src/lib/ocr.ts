@@ -1,26 +1,36 @@
 /**
- * OCR orchestration: Mistral OCR (primary) → Gemini 2.5 Flash (fallback).
- * Returns extracted text and an overall confidence score.
+ * OCR / text extraction, Workers-AI-only edition.
+ *  - text & CSV (incl. QuickBooks exports): decoded directly, no model.
+ *  - images: transcribed with a Workers AI Llama vision model.
+ *  - PDFs/DOCX: best-effort text decode (no external OCR provider wired yet).
+ *  - audio: handled by Whisper elsewhere.
  *
  * Called by the document-pipeline Workflow step 2.
  */
 
 import type { AIGateway } from "./ai-gateway";
-import { MODELS } from "./ai-gateway";
 
 export interface OcrResult {
   text: string;
   confidence: number;
-  /** Which model actually produced the result. */
+  /** Which path actually produced the result. */
   model: string;
   pageCount?: number;
 }
 
-/**
- * Runs OCR on a document fetched from R2.
- * For PDFs with a text layer, we extract directly (no OCR cost).
- * For scanned/image content we call Mistral OCR, falling back to Gemini.
- */
+function isTextLike(mime: string): boolean {
+  return (
+    mime.startsWith("text/") ||
+    mime.includes("csv") ||
+    mime.includes("json") ||
+    mime.includes("plain")
+  );
+}
+
+function decodeUtf8(bytes: ArrayBuffer): string {
+  return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+}
+
 export async function runOcr(params: {
   fileType: string;
   r2Object: R2ObjectBody;
@@ -33,68 +43,32 @@ export async function runOcr(params: {
     return { text: "", confidence: 1, model: "whisper", pageCount: 0 };
   }
 
+  const mime = r2Object.httpMetadata?.contentType ?? "";
   const bytes = await r2Object.arrayBuffer();
-  const base64 = arrayBufferToBase64(bytes);
 
-  // Try Mistral OCR first (best accuracy on printed docs)
-  try {
-    return await mistralOcr(base64, params.r2Object.httpMetadata?.contentType ?? "application/pdf", gateway);
-  } catch (err) {
-    console.warn("[ocr] Mistral OCR failed, falling back to Gemini:", err);
+  // Plain-text formats (CSV, TXT, JSON exports): read directly.
+  if (isTextLike(mime) || fileType === "spreadsheet") {
+    const text = decodeUtf8(bytes).trim();
+    if (text.length > 0) {
+      return { text, confidence: 0.99, model: "direct-text" };
+    }
   }
 
-  // Gemini 2.5 Flash fallback (handles handwriting, complex forms)
-  try {
-    return await geminiOcr(base64, params.r2Object.httpMetadata?.contentType ?? "application/pdf", gateway);
-  } catch (err) {
-    console.error("[ocr] Both OCR providers failed:", err);
-    throw new Error("OCR failed on all providers");
-  }
-}
-
-async function mistralOcr(base64: string, mimeType: string, gateway: AIGateway): Promise<OcrResult> {
-  const result = await gateway.complete({
-    model: MODELS.ocr_heavy,
-    messages: [
-      {
-        role: "user",
-        content: JSON.stringify({
-          type: "document_url",
-          document_url: `data:${mimeType};base64,${base64}`,
-        }),
-      },
-    ],
-    max_tokens: 8192,
-  });
-
-  if (!result.content || result.content.trim().length < 10) {
-    throw new Error("Mistral returned empty OCR result");
+  // Images: Workers AI vision transcription.
+  if (mime.startsWith("image/") || fileType === "image") {
+    const text = (await gateway.ocrImage(bytes)).trim();
+    return { text, confidence: text.length > 10 ? 0.78 : 0, model: "llama-vision" };
   }
 
-  return {
-    text: result.content,
-    confidence: 0.93,
-    model: MODELS.ocr_heavy,
-  };
-}
+  // PDFs / DOCX: best-effort. Many PDFs embed extractable ASCII; pull what we can.
+  const raw = decodeUtf8(bytes);
+  const printable = raw.replace(/[^\x20-\x7E\n\r\t]/g, " ").replace(/\s{3,}/g, "  ").trim();
+  if (printable.length >= 40) {
+    return { text: printable, confidence: 0.55, model: "text-extract" };
+  }
 
-async function geminiOcr(base64: string, mimeType: string, gateway: AIGateway): Promise<OcrResult> {
-  const result = await gateway.complete({
-    model: MODELS.ocr_light,
-    messages: [
-      {
-        role: "user",
-        content: `Extract all text from this document. Return the raw text only, preserving structure and layout as best you can. Do not interpret or summarize — just transcribe.\n\n[Document: data:${mimeType};base64,${base64.slice(0, 100)}...]`,
-      },
-    ],
-    max_tokens: 8192,
-  });
-
-  return {
-    text: result.content,
-    confidence: 0.82,
-    model: MODELS.ocr_light,
-  };
+  // Couldn't read it without an external OCR provider.
+  return { text: "", confidence: 0, model: "none" };
 }
 
 /** Split text into overlapping chunks for embedding. */
@@ -106,13 +80,4 @@ export function chunkText(text: string, chunkSize = 1500, overlap = 200): string
     pos += chunkSize - overlap;
   }
   return chunks;
-}
-
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = "";
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
 }

@@ -24,12 +24,12 @@ database_id = "e27ac08e-d900-4d62-b5c2-4540f369636d"
 binding = "DOCUMENTS"
 bucket_name = "successio-documents"
 
-# Semantic search over document chunks. Create the index first:
+# Semantic search (re-enable once the index exists — kept out of main so deploys
+# don't fail on a missing index):
 #   wrangler vectorize create successio-docs --dimensions=768 --metric=cosine
-# (768 dims matches Workers AI @cf/baai/bge-base-en-v1.5.)
-[[vectorize]]
-binding = "VECTORS"
-index_name = "successio-docs"
+# [[vectorize]]
+# binding = "VECTORS"
+# index_name = "successio-docs"
 
 [[kv_namespaces]]
 binding = "SESSIONS"
