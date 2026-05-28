@@ -4,14 +4,15 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { Search, FileText, FileSpreadsheet, FileAudio, Image, File } from "lucide-react";
 import { AppTopNav } from "@/components/app/app-topnav";
+import { DocumentSlideOver } from "@/components/vault/document-slide-over";
 import { trpc } from "@/lib/trpc-client";
 import { cn } from "@/lib/utils";
 
 const FILE_ICONS: Record<string, React.ElementType> = {
-  pdf: FileText,
+  pdf:         FileText,
   spreadsheet: FileSpreadsheet,
-  image: Image,
-  audio: FileAudio,
+  image:       Image,
+  audio:       FileAudio,
 };
 
 const STATUS_FILTERS = [
@@ -21,6 +22,7 @@ const STATUS_FILTERS = [
 export default function VaultPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
 
   const { data: docs = [], isLoading } = trpc.documents.list.useQuery({ limit: 100 });
 
@@ -94,7 +96,8 @@ export default function VaultPage() {
                       hidden: { opacity: 0, y: 12 },
                       show: { opacity: 1, y: 0, transition: { duration: 0.4 } },
                     }}
-                    className="group rounded-xl border border-edge bg-canvas-soft/40 p-4 transition-colors hover:border-edge-strong"
+                    onClick={() => setSelectedDocId(doc.id)}
+                    className="group cursor-pointer rounded-xl border border-edge bg-canvas-soft/40 p-4 transition-colors hover:border-amber/30 hover:bg-canvas-soft/60"
                   >
                     <Icon className="size-7 text-amber/70" />
                     <p className="mt-3 truncate text-sm font-medium text-ink">
@@ -115,19 +118,24 @@ export default function VaultPage() {
           )}
         </div>
       </main>
+
+      <DocumentSlideOver
+        documentId={selectedDocId}
+        onClose={() => setSelectedDocId(null)}
+      />
     </>
   );
 }
 
 function StatusPill({ status }: { status: string }) {
   const map: Record<string, string> = {
-    complete:    "bg-emerald-500/10 text-emerald-400",
-    needs_review:"bg-orange-500/10 text-orange-400",
-    extracting:  "bg-amber/10 text-amber",
-    ocr:         "bg-sky-500/10 text-sky-400",
-    embedding:   "bg-violet-500/10 text-violet-400",
-    queued:      "bg-white/5 text-ink-faint",
-    failed:      "bg-red-500/10 text-red-400",
+    complete:     "bg-emerald-500/10 text-emerald-400",
+    needs_review: "bg-orange-500/10 text-orange-400",
+    extracting:   "bg-amber/10 text-amber",
+    ocr:          "bg-sky-500/10 text-sky-400",
+    embedding:    "bg-violet-500/10 text-violet-400",
+    queued:       "bg-white/5 text-ink-faint",
+    failed:       "bg-red-500/10 text-red-400",
   };
   return (
     <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium capitalize", map[status] ?? "bg-white/5 text-ink-faint")}>

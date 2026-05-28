@@ -2,7 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { eq, and, desc } from "drizzle-orm";
 import { router, protectedProcedure } from "../trpc";
-import { documents, organizations } from "@/db/schema";
+import { documents, organizations, extractedEntities } from "@/db/schema";
 import { documentKey, detectFileType } from "@/lib/r2";
 import { uploadRequestSchema, documentJobSchema } from "@/types";
 
@@ -138,5 +138,36 @@ export const documentsRouter = router({
         .get();
       if (!doc) throw new TRPCError({ code: "NOT_FOUND" });
       return doc;
+    }),
+
+  /** Returns full document + extracted entities for the vault slide-over. */
+  getDetail: protectedProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ input, ctx }) => {
+      const doc = await ctx.db
+        .select()
+        .from(documents)
+        .where(
+          and(
+            eq(documents.id, input.id),
+            eq(documents.orgId, ctx.session.orgId)
+          )
+        )
+        .get();
+      if (!doc) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const entities = await ctx.db
+        .select({
+          id: extractedEntities.id,
+          entityType: extractedEntities.entityType,
+          data: extractedEntities.data,
+          confidence: extractedEntities.confidence,
+          needsReview: extractedEntities.needsReview,
+        })
+        .from(extractedEntities)
+        .where(eq(extractedEntities.documentId, input.id))
+        .all();
+
+      return { doc, entities };
     }),
 });

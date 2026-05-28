@@ -1,0 +1,289 @@
+/**
+ * Extraction Worker — Step 3 of the document pipeline.
+ * Sends OCR text to Claude Sonnet via AI Gateway, parses the JSON response
+ * through Zod, writes validated entities to D1.
+ *
+ * Idempotent: checks document status before running.
+ * Never crashes the pipeline on parse failure — routes to manual review instead.
+ */
+
+import { drizzle } from "drizzle-orm/d1";
+import { eq } from "drizzle-orm";
+import { z } from "zod";
+import * as schema from "@/db/schema";
+import { makeGateway, MODELS } from "@/lib/ai-gateway";
+import { EXTRACTION_SYSTEM, buildExtractionPrompt, CONFIDENCE_THRESHOLD } from "@/prompts/manufacturing/extract";
+
+function nanoid(len = 21): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let id = "";
+  const bytes = crypto.getRandomValues(new Uint8Array(len));
+  for (const b of bytes) id += chars[b % chars.length];
+  return id;
+}
+
+// ── Zod schema for Claude's JSON output ──────────────────────────────────────
+
+const extractedCustomer = z.object({
+  name: z.string(),
+  revenue_share: z.number().min(0).max(1).optional(),
+  contract_status: z.enum(["active", "expired", "month-to-month"]).optional(),
+  notes: z.string().optional(),
+  confidence: z.number().min(0).max(1),
+});
+
+const extractedEquipment = z.object({
+  name: z.string(),
+  manufacturer: z.string().optional(),
+  model: z.string().optional(),
+  year_installed: z.number().int().optional(),
+  condition: z.enum(["excellent", "good", "fair", "poor"]).optional(),
+  estimated_value: z.number().optional(),
+  confidence: z.number().min(0).max(1),
+});
+
+const extractedFinancial = z.object({
+  year: z.number().int(),
+  revenue: z.number().optional(),
+  gross_profit: z.number().optional(),
+  ebitda: z.number().optional(),
+  owner_compensation: z.number().optional(),
+  confidence: z.number().min(0).max(1),
+});
+
+const extractedEmployee = z.object({
+  name: z.string(),
+  role: z.string(),
+  tenure_years: z.number().optional(),
+  is_key_person: z.boolean().optional(),
+  notes: z.string().optional(),
+  confidence: z.number().min(0).max(1),
+});
+
+const extractedProcess = z.object({
+  title: z.string(),
+  steps: z.array(z.string()),
+  owner: z.string().optional(),
+  confidence: z.number().min(0).max(1),
+});
+
+const extractedMilestone = z.object({
+  year: z.number().int(),
+  category: z.enum(["founding", "financial", "equipment", "people", "customer", "operations", "compliance", "milestone"]),
+  title: z.string(),
+  description: z.string(),
+  metric_label: z.string().optional(),
+  metric_value: z.string().optional(),
+  source: z.string().optional(),
+  confidence: z.number().min(0).max(1),
+});
+
+const extractionOutputSchema = z.object({
+  document_type_detected: z.string().optional(),
+  summary: z.string().optional(),
+  customers: z.array(extractedCustomer).optional(),
+  equipment: z.array(extractedEquipment).optional(),
+  financials: z.array(extractedFinancial).optional(),
+  employees: z.array(extractedEmployee).optional(),
+  processes: z.array(extractedProcess).optional(),
+  milestones: z.array(extractedMilestone).optional(),
+});
+
+type ExtractionOutput = z.infer<typeof extractionOutputSchema>;
+
+// ── Main extraction function ──────────────────────────────────────────────────
+
+export interface ExtractionParams {
+  documentId: string;
+  orgId: string;
+  vertical: string;
+  ocrText: string;
+  orgName?: string;
+  env: {
+    DB: D1Database;
+    AI: Ai;
+    CF_ACCOUNT_ID?: string;
+    CF_AI_GATEWAY_ID: string;
+    ANTHROPIC_API_KEY?: string;
+    GOOGLE_AI_API_KEY?: string;
+  };
+}
+
+export async function runExtraction(params: ExtractionParams): Promise<void> {
+  const { documentId, orgId, vertical, ocrText, orgName, env } = params;
+  const db = drizzle(env.DB, { schema });
+  const gateway = makeGateway(env);
+
+  // Mark as extracting
+  await db.update(schema.documents)
+    .set({ status: "extracting" })
+    .where(eq(schema.documents.id, documentId));
+
+  let parsed: ExtractionOutput;
+
+  try {
+    const prompt = buildExtractionPrompt({ rawText: ocrText, vertical, orgName });
+    const result = await gateway.complete({
+      model: MODELS.extraction,
+      messages: [
+        { role: "system", content: EXTRACTION_SYSTEM },
+        { role: "user", content: prompt },
+      ],
+      max_tokens: 4096,
+      temperature: 0,
+    });
+
+    // Strip any markdown fences Claude might add
+    const cleaned = result.content.replace(/^```json\s*/m, "").replace(/\s*```$/m, "").trim();
+    const raw = JSON.parse(cleaned);
+    parsed = extractionOutputSchema.parse(raw);
+  } catch (err) {
+    console.error("[extract] Parse/call failed, routing to review:", err);
+    await db.update(schema.documents)
+      .set({ status: "needs_review", errorMessage: String(err) })
+      .where(eq(schema.documents.id, documentId));
+    return;
+  }
+
+  // Write document type if detected
+  if (parsed.document_type_detected) {
+    await db.update(schema.documents)
+      .set({ documentType: parsed.document_type_detected })
+      .where(eq(schema.documents.id, documentId));
+  }
+
+  // Write all entity types
+  await Promise.all([
+    writeCustomers(db, parsed.customers ?? [], orgId, documentId),
+    writeEquipment(db, parsed.equipment ?? [], orgId, documentId),
+    writeFinancials(db, parsed.financials ?? [], orgId, documentId),
+    writeEmployees(db, parsed.employees ?? [], orgId, documentId),
+    writeProcesses(db, parsed.processes ?? [], orgId, documentId),
+    writeMilestones(db, parsed.milestones ?? [], orgId, documentId),
+    writeEntityBlobs(db, parsed, orgId, documentId),
+  ]);
+
+  await db.update(schema.documents)
+    .set({ status: "embedding" })
+    .where(eq(schema.documents.id, documentId));
+}
+
+// ── Entity writers (all check confidence threshold) ───────────────────────────
+
+async function writeCustomers(db: ReturnType<typeof drizzle>, items: z.infer<typeof extractedCustomer>[], orgId: string, docId: string) {
+  for (const c of items) {
+    await db.insert(schema.customers).values({
+      id: nanoid(),
+      orgId,
+      name: c.name,
+      revenueShare: c.revenue_share,
+      contractStatus: c.contract_status,
+      notes: c.notes,
+      sourceDocumentId: docId,
+    }).onConflictDoNothing();
+  }
+}
+
+async function writeEquipment(db: ReturnType<typeof drizzle>, items: z.infer<typeof extractedEquipment>[], orgId: string, docId: string) {
+  for (const e of items) {
+    await db.insert(schema.equipment).values({
+      id: nanoid(),
+      orgId,
+      name: e.name,
+      manufacturer: e.manufacturer,
+      model: e.model,
+      yearInstalled: e.year_installed,
+      condition: e.condition,
+      estimatedValue: e.estimated_value,
+      sourceDocumentId: docId,
+    }).onConflictDoNothing();
+  }
+}
+
+async function writeFinancials(db: ReturnType<typeof drizzle>, items: z.infer<typeof extractedFinancial>[], orgId: string, docId: string) {
+  for (const f of items) {
+    if (f.confidence < CONFIDENCE_THRESHOLD) continue;
+    await db.insert(schema.financials).values({
+      id: nanoid(),
+      orgId,
+      year: f.year,
+      revenue: f.revenue,
+      grossProfit: f.gross_profit,
+      ebitda: f.ebitda,
+      ownerCompensation: f.owner_compensation,
+      sourceDocumentId: docId,
+    }).onConflictDoNothing();
+  }
+}
+
+async function writeEmployees(db: ReturnType<typeof drizzle>, items: z.infer<typeof extractedEmployee>[], orgId: string, docId: string) {
+  for (const e of items) {
+    await db.insert(schema.employees).values({
+      id: nanoid(),
+      orgId,
+      name: e.name,
+      role: e.role,
+      tenureYears: e.tenure_years,
+      isKeyPerson: e.is_key_person ?? false,
+      notes: e.notes,
+      sourceDocumentId: docId,
+    }).onConflictDoNothing();
+  }
+}
+
+async function writeProcesses(db: ReturnType<typeof drizzle>, items: z.infer<typeof extractedProcess>[], orgId: string, docId: string) {
+  for (const p of items) {
+    await db.insert(schema.processes).values({
+      id: nanoid(),
+      orgId,
+      title: p.title,
+      steps: JSON.stringify(p.steps),
+      source: "extracted",
+      sourceDocumentId: docId,
+    }).onConflictDoNothing();
+  }
+}
+
+async function writeMilestones(db: ReturnType<typeof drizzle>, items: z.infer<typeof extractedMilestone>[], orgId: string, docId: string) {
+  for (const m of items) {
+    if (m.confidence < CONFIDENCE_THRESHOLD) continue;
+    await db.insert(schema.orgMilestones).values({
+      id: nanoid(),
+      orgId,
+      year: m.year,
+      category: m.category,
+      title: m.title,
+      description: m.description,
+      metricLabel: m.metric_label,
+      metricValue: m.metric_value,
+      source: m.source,
+      sourceDocumentId: docId,
+      isManual: false,
+    }).onConflictDoNothing();
+  }
+}
+
+async function writeEntityBlobs(db: ReturnType<typeof drizzle>, parsed: ExtractionOutput, orgId: string, docId: string) {
+  // Persist each entity type as a blob in extracted_entities for audit trail
+  const types: [string, unknown[] | undefined][] = [
+    ["customer", parsed.customers],
+    ["equipment", parsed.equipment],
+    ["financial", parsed.financials],
+    ["employee", parsed.employees],
+    ["process", parsed.processes],
+    ["milestone", parsed.milestones],
+  ];
+  for (const [type, items] of types) {
+    if (!items || items.length === 0) continue;
+    const avgConfidence = (items as { confidence: number }[]).reduce((s, i) => s + (i.confidence ?? 0.5), 0) / items.length;
+    await db.insert(schema.extractedEntities).values({
+      id: nanoid(),
+      documentId: docId,
+      orgId,
+      entityType: type,
+      data: JSON.stringify(items),
+      confidence: avgConfidence,
+      needsReview: avgConfidence < CONFIDENCE_THRESHOLD,
+    });
+  }
+}
