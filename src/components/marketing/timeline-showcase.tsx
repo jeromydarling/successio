@@ -63,7 +63,7 @@ export function TimelineShowcase() {
 
         <Reveal>
           <div className="mt-14 flex justify-center">
-            <Link href="/history">
+            <Link href="/demo">
               <Button variant="outline" size="lg" className="group">
                 Open the full interactive demo
                 <ArrowUpRight className="transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />

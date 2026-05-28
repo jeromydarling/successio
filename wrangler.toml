@@ -2,7 +2,9 @@ name = "successio"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
-main = ".open-next/worker.js"
+# Custom entry composes the OpenNext fetch handler with the Queue consumer,
+# Email Worker, Durable Objects, and Workflow (see worker.ts).
+main = "worker.ts"
 
 [assets]
 directory = ".open-next/assets"

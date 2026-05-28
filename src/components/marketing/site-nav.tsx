@@ -12,7 +12,7 @@ const LINKS = [
   { href: "#how", label: "How it works" },
   { href: "#timeline", label: "The story" },
   { href: "#verticals", label: "Trades" },
-  { href: "/history", label: "Live demo" },
+  { href: "/demo", label: "Live demo" },
 ];
 
 export function SiteNav() {
