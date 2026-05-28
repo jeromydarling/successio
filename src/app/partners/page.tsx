@@ -3,7 +3,7 @@
 import Link from "next/link";
 import {
   ArrowRight, Building2, LayoutDashboard, ShieldCheck,
-  HandHeart, Landmark, Users2,
+  HandHeart, Landmark, Users2, Rocket, Check,
 } from "lucide-react";
 import { SiteNav } from "@/components/marketing/site-nav";
 import { SiteFooter } from "@/components/marketing/site-footer";
@@ -65,6 +65,13 @@ const PARTNER_VALUE = [
     title: "Mission outcomes you can report",
     body: "Jobs kept in the region, businesses kept whole and local, ownership broadened to employees. Measurable impact for your board, your funders, and your members.",
   },
+];
+
+const PILOT = [
+  "A white-labeled portal under your brand — a dedicated home like ntma.successio.app",
+  "Onboard a starting cohort of members at no risk",
+  "Your aggregate readiness dashboard, live from day one",
+  "Co-funded with foundation or grant support where it's available",
 ];
 
 const PARTNERS = [
@@ -187,6 +194,64 @@ export default function PartnersPage() {
               </StaggerItem>
             ))}
           </StaggerGroup>
+        </div>
+      </section>
+
+      {/* Charter pilot */}
+      <section className="relative py-24">
+        <div className="mx-auto max-w-6xl px-5">
+          <Reveal>
+            <div className="relative overflow-hidden rounded-3xl border border-amber/25 bg-amber/[0.04] p-8 md:p-12">
+              <div className="pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full bg-amber/[0.1] blur-[110px]" />
+              <div className="relative grid grid-cols-1 gap-10 lg:grid-cols-[1fr_1fr]">
+                <div>
+                  <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-amber/30 bg-amber/[0.06] px-3 py-1 text-xs text-amber">
+                    <Rocket className="size-3.5" />
+                    Charter Partner pilot
+                  </div>
+                  <h2 className="text-balance text-3xl font-semibold tracking-tight text-ink md:text-4xl">
+                    Start with a pilot, not a leap of faith.
+                  </h2>
+                  <p className="mt-4 text-lg leading-relaxed text-ink-soft text-pretty">
+                    A 90-day charter partnership — white-labeled under your brand,
+                    with a cohort of your members — so you can see the readiness
+                    lift across your membership before you commit to anything.
+                  </p>
+                  <p className="mt-4 text-base leading-relaxed text-ink-soft text-pretty">
+                    Our flagship pilot is built for national trade associations
+                    like the <span className="text-ink">NTMA</span>. Be the charter
+                    partner for your trade.
+                  </p>
+                  <div className="mt-7">
+                    <Link href="/contact?plan=partner">
+                      <Button size="lg" className="group">
+                        Become our charter partner
+                        <ArrowRight className="transition-transform duration-200 group-hover:translate-x-1" />
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+
+                <div className="flex flex-col justify-center">
+                  <ul className="space-y-3">
+                    {PILOT.map((p) => (
+                      <li key={p} className="flex items-start gap-3 rounded-xl border border-edge bg-canvas/40 p-4">
+                        <Check className="mt-0.5 size-4 shrink-0 text-amber" />
+                        <span className="text-sm leading-relaxed text-ink-soft">{p}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <Link
+                    href="/demo"
+                    className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-amber-bright transition-colors hover:text-amber"
+                  >
+                    See exactly what a member sees — walk a live profile
+                    <ArrowRight className="size-4" />
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </Reveal>
         </div>
       </section>
 

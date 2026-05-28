@@ -13,8 +13,8 @@ import { ArrowRight, FileText, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Magnetic } from "./motion-primitives";
 
-const HEADLINE = ["Your", "life's", "work,"];
-const HEADLINE_2 = ["passed", "on", "—", "not", "sold", "off."];
+const HEADLINE = ["Your", "legacy"];
+const HEADLINE_2 = ["shouldn't", "retire", "with", "you."];
 
 export function Hero() {
   const ref = useRef<HTMLElement>(null);
@@ -89,7 +89,7 @@ export function Hero() {
                   key={w}
                   word={w}
                   delay={0.4 + i * 0.08}
-                  highlight={w === "passed"}
+                  highlight={w === "retire"}
                 />
               ))}
             </span>
@@ -101,10 +101,10 @@ export function Hero() {
             transition={{ duration: 0.7, delay: 0.85 }}
             className="mt-7 max-w-xl text-lg leading-relaxed text-ink-soft text-pretty"
           >
-            You spent decades building this — the customers who trust you, the
-            crew who knows the work, the things that only live in your head.
-            Successio gets it down on paper and passes it on whole: to a buyer,
-            your employees, or a local deal that keeps it rooted where it belongs.
+            You spent your whole life building this. Retiring shouldn&apos;t be
+            the end of it. Successio turns your life&apos;s work into a legacy the
+            next owner can carry forward — and partners with the trade
+            associations and foundations that make these handoffs possible.
           </motion.p>
 
           <motion.div
