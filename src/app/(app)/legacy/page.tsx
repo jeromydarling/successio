@@ -86,7 +86,7 @@ function LegacyInner() {
                   <p className="font-mono text-[11px] uppercase tracking-[0.3em] text-amber-700">Chapter {i + 1}</p>
                   <h2 className="mt-2 font-serif text-2xl font-semibold text-stone-900">{ch.title}</h2>
                   <div className="mt-5 space-y-4">
-                    {ch.body.split(/\n{2,}/).map((para, j) => (
+                    {ch.paragraphs.map((para, j) => (
                       <p key={j} className="font-serif text-[15px] leading-[1.8] text-stone-700">{para}</p>
                     ))}
                   </div>

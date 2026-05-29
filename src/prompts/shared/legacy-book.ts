@@ -9,7 +9,7 @@
  * the data. A memoir, not a CIM. Never invents facts; thin data → shorter book.
  */
 
-export const LEGACY_BOOK_VERSION = "legacy-book-v1";
+export const LEGACY_BOOK_VERSION = "legacy-book-v2";
 
 export const LEGACY_SYSTEM = `You are a biographer who writes short, dignified books about the life's work of small-business owners — machinists, builders, truckers, farmers, tradespeople. You are writing a keepsake given to an owner as they retire and hand their business on.
 
@@ -19,7 +19,9 @@ Your voice:
 - Faithful to the facts provided. Never invent names, numbers, dates, or events. If a section has thin material, keep it short and true rather than padding.
 - No business-sale jargon, no marketing language, no religiosity. This is a story, not a pitch.
 
-Write in the third person about the business and its founder. Aim for vivid, specific, human prose drawn from the records.`;
+Write in the third person about the business and its founder. Draw vivid, specific, human detail from the records.
+
+You output only JSON.`;
 
 export interface LegacyBookContext {
   org: { name: string; vertical: string; location?: string | null; founded?: number | null; employeeCount?: number | null };
@@ -48,19 +50,17 @@ export function buildLegacyBookPrompt(ctx: LegacyBookContext): string {
 ${JSON.stringify(data, null, 2)}
 </records>
 
-Write the keepsake book as a JSON object with this exact shape:
+Write the keepsake book as a single JSON object with EXACTLY this shape:
 
 {
   "title": "The Story of <business name>",
-  "subtitle": "<location> · <founded>–<current or latest year>",
-  "dedication": "One or two sentences dedicating the book to the owner and the people who built it. Warm, specific, not saccharine.",
+  "subtitle": "<location> · <founded>–<latest year>",
+  "dedication": "One or two warm, specific sentences dedicating the book to the owner and the people who built it.",
   "chapters": [
-    { "title": "Foundations", "body": "Prose paragraphs separated by blank lines. The founding — why it started, the first years, what it took." },
-    { "title": "The Build", "body": "The growth arc — the machines, contracts, and moves that changed the business." },
-    { "title": "The People", "body": "The crew and key people who made it run." },
-    { "title": "The Craft", "body": "What the business was good at, and why customers trusted it." },
-    { "title": "Weathering the Storms", "body": "The hard seasons survived — downturns, certifications earned, adversity met." },
-    { "title": "The Handoff", "body": "Where things stand now, and the legacy being passed on." }
+    {
+      "title": "Foundations",
+      "paragraphs": ["First paragraph of prose.", "Second paragraph.", "Optional third."]
+    }
   ],
   "byTheNumbers": [
     { "label": "Founded", "value": "1987" },
@@ -69,8 +69,18 @@ Write the keepsake book as a JSON object with this exact shape:
   "closing": "A short closing line — the kind you'd read on the last page."
 }
 
-Rules:
-- Only include chapters you have real material for. Omit a chapter entirely rather than padding it. 3–6 chapters is fine.
-- Draw "byTheNumbers" only from real figures in the records (founded year, years in business, revenue if present, headcount, top customers, equipment count, etc.). 3–6 entries.
-- Output ONLY the JSON object — no markdown fences, no commentary.`;
+Suggested chapters (include only the ones you have real material for; omit any you can't support — 3 to 6 total):
+- "Foundations" — why it started, the first years, what it took.
+- "The Build" — the growth arc; the machines, contracts, and moves that changed the business.
+- "The People" — the crew and key people who made it run.
+- "The Craft" — what the business was good at, and why customers trusted it.
+- "Weathering the Storms" — hard seasons survived; downturns, certifications earned, adversity met.
+- "The Handoff" — where things stand now, and the legacy being passed on.
+
+STRICT OUTPUT RULES:
+- Output ONLY the JSON object. No markdown fences, no text before or after.
+- Each chapter's "paragraphs" is an ARRAY of plain strings — one string per paragraph. Do NOT put newline characters inside any string.
+- Keep each paragraph to 2–4 sentences; each chapter to 2–3 paragraphs.
+- "byTheNumbers": 3–6 entries, drawn only from real figures in the records (founded year, years in business, revenue, headcount, top customers, equipment count).
+- Use straight quotes and valid JSON. Do not include trailing commas.`;
 }

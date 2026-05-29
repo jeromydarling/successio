@@ -94,7 +94,7 @@ export const legacyRouter = router({
           { role: "system", content: LEGACY_SYSTEM },
           { role: "user", content: prompt },
         ],
-        max_tokens: 4096,
+        max_tokens: 6000,
         temperature: 0.4,
       });
 

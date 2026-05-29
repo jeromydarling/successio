@@ -33,7 +33,7 @@ function loadScript(src: string, attrs?: Record<string, string>): Promise<void> 
 }
 
 export function DocumentConnectors({ onImported }: { onImported?: (count: number) => void }) {
-  const { data: connectors } = trpc.config.connectors.useQuery(undefined, { staleTime: Infinity });
+  const { data: connectors, isLoading } = trpc.config.connectors.useQuery(undefined, { staleTime: Infinity });
   const utils = trpc.useUtils();
   const [busy, setBusy] = useState<Provider | null>(null);
   const [status, setStatus] = useState<{ kind: "info" | "ok" | "error"; msg: string } | null>(null);
@@ -175,7 +175,7 @@ export function DocumentConnectors({ onImported }: { onImported?: (count: number
     <div className="mt-5 border-t border-edge pt-5">
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium text-ink">Import from cloud storage</p>
-        {!anyConfigured && <span className="text-xs text-ink-faint">Setup pending</span>}
+        {!isLoading && !anyConfigured && <span className="text-xs text-ink-faint">Setup pending</span>}
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -212,7 +212,7 @@ export function DocumentConnectors({ onImported }: { onImported?: (count: number
         </div>
       )}
 
-      {!anyConfigured && (
+      {!isLoading && !anyConfigured && (
         <p className="mt-2 text-xs text-ink-faint">
           Connect Dropbox, Google Drive, OneDrive, or SharePoint to import documents without downloading them first.
         </p>
