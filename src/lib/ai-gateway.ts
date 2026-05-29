@@ -107,13 +107,43 @@ export class AIGateway {
     };
   }
 
-  /** Transcribe text from an image using a Workers AI vision model. */
+  /** Convert a document (PDF/DOCX/XLSX/CSV/HTML/JSON…) to Markdown via the
+   *  native Workers AI binding. Returns "" on unsupported/empty/error. */
+  async toMarkdown(name: string, bytes: ArrayBuffer): Promise<string> {
+    const results = (await (this.env.AI as any).toMarkdown([
+      { name, blob: new Blob([bytes]) },
+    ])) as { format?: string; data?: string }[] | { format?: string; data?: string };
+    const first = Array.isArray(results) ? results[0] : results;
+    return first?.format === "markdown" ? (first.data ?? "") : "";
+  }
+
+  /** Transcribe text from an image using a Workers AI vision model.
+   *  Llama 3.2 vision needs the image as a byte array, and has a one-time Meta
+   *  license gate that we accept automatically on first use. */
   async ocrImage(bytes: ArrayBuffer): Promise<string> {
+    try {
+      return await this.runVision(bytes);
+    } catch (err) {
+      // First call may fail on the unaccepted Meta license — accept and retry.
+      try {
+        await (this.env.AI as any).run(MODELS.ocr_heavy, { prompt: "agree" });
+      } catch { /* ignore */ }
+      try {
+        return await this.runVision(bytes);
+      } catch (err2) {
+        console.error("[ocr] vision OCR failed:", err2 ?? err);
+        return "";
+      }
+    }
+  }
+
+  private async runVision(bytes: ArrayBuffer): Promise<string> {
     const result = (await (this.env.AI as any).run(MODELS.ocr_heavy, {
       image: [...new Uint8Array(bytes)],
       prompt:
-        "Transcribe all text in this document image exactly as written. Preserve structure and line breaks. Output only the transcription, no commentary.",
+        "You are an OCR engine. Transcribe ALL text in this document image exactly as it appears — preserve line breaks, column order, and tables (as Markdown tables). Do not summarize, infer, or add anything. Output only the transcription.",
       max_tokens: 2048,
+      temperature: 0,
     })) as { response?: string; description?: string };
     return result.response ?? result.description ?? "";
   }

@@ -73,7 +73,8 @@ export class DocumentPipeline extends WorkflowEntrypoint<PipelineEnv, DocumentJo
       }
 
       const { makeGateway } = await import("@/lib/ai-gateway");
-      const result = await runOcr({ fileType, r2Object: obj, gateway: makeGateway(env) });
+      const fileName = r2Key.split("/").pop() || r2Key;
+      const result = await runOcr({ fileType, fileName, r2Object: obj, gateway: makeGateway(env) });
 
       await db.update(schema.documents)
         .set({ ocrText: result.text, ocrConfidence: result.confidence, status: "extracting" })

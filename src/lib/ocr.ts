@@ -18,25 +18,17 @@ export interface OcrResult {
   pageCount?: number;
 }
 
-function isTextLike(mime: string): boolean {
-  return (
-    mime.startsWith("text/") ||
-    mime.includes("csv") ||
-    mime.includes("json") ||
-    mime.includes("plain")
-  );
-}
-
 function decodeUtf8(bytes: ArrayBuffer): string {
   return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
 }
 
 export async function runOcr(params: {
   fileType: string;
+  fileName: string;
   r2Object: R2ObjectBody;
   gateway: AIGateway;
 }): Promise<OcrResult> {
-  const { fileType, r2Object, gateway } = params;
+  const { fileType, fileName, r2Object, gateway } = params;
 
   // Audio files don't need OCR — handled separately by Whisper
   if (fileType === "audio") {
@@ -46,29 +38,28 @@ export async function runOcr(params: {
   const mime = r2Object.httpMetadata?.contentType ?? "";
   const bytes = await r2Object.arrayBuffer();
 
-  // Plain-text formats (CSV, TXT, JSON exports): read directly.
-  if (isTextLike(mime) || fileType === "spreadsheet") {
-    const text = decodeUtf8(bytes).trim();
-    if (text.length > 0) {
-      return { text, confidence: 0.99, model: "direct-text" };
-    }
-  }
-
-  // Images: Workers AI vision transcription.
+  // Images: send straight to the vision model (toMarkdown only captions images).
   if (mime.startsWith("image/") || fileType === "image") {
     const text = (await gateway.ocrImage(bytes)).trim();
     return { text, confidence: text.length > 10 ? 0.78 : 0, model: "llama-vision" };
   }
 
-  // PDFs / DOCX: best-effort. Many PDFs embed extractable ASCII; pull what we can.
-  const raw = decodeUtf8(bytes);
-  const printable = raw.replace(/[^\x20-\x7E\n\r\t]/g, " ").replace(/\s{3,}/g, "  ").trim();
-  if (printable.length >= 40) {
-    return { text: printable, confidence: 0.55, model: "text-extract" };
+  // Everything else (PDF, DOCX, XLSX, CSV, HTML, JSON, TXT): Workers AI
+  // document → Markdown conversion. Free, structure-preserving, on-binding.
+  const md = (await gateway.toMarkdown(fileName, bytes)).trim();
+  if (md.length >= 20) {
+    return { text: md, confidence: 0.9, model: "workers-ai-markdown" };
   }
 
-  // Couldn't read it without an external OCR provider.
-  return { text: "", confidence: 0, model: "none" };
+  // Plain-text fallback for anything toMarkdown didn't handle.
+  const decoded = decodeUtf8(bytes).replace(/[^\x20-\x7E\n\r\t]/g, " ").trim();
+  if (decoded.length >= 40) {
+    return { text: decoded, confidence: 0.55, model: "text-extract" };
+  }
+
+  // Likely a scanned PDF with no text layer — toMarkdown can't OCR these.
+  // Flag for review rather than pretend (needs rasterize→vision or Mistral OCR).
+  return { text: "", confidence: 0, model: mime.includes("pdf") ? "scanned-pdf" : "none" };
 }
 
 /** Split text into overlapping chunks for embedding. */
