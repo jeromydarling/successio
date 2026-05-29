@@ -31,6 +31,16 @@ function formatDuration(secs: number) {
   return `${m}:${s}`;
 }
 
+/** Base64-encode bytes in chunks (avoids call-stack limits on large buffers). */
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
 export default function KnowledgePage() {
   const [activePrompt, setActivePrompt] = useState(0);
   const [search, setSearch] = useState("");
@@ -45,7 +55,6 @@ export default function KnowledgePage() {
   const utils = trpc.useUtils();
   const { data: sops = [], isLoading: sopsLoading } = trpc.knowledge.listSops.useQuery();
 
-  const requestUpload = trpc.knowledge.requestAudioUpload.useMutation();
   const processRecording = trpc.knowledge.processRecording.useMutation({
     onSuccess: (data) => {
       setTranscript(data.transcript);
@@ -69,26 +78,17 @@ export default function KnowledgePage() {
 
   const handleProcess = async () => {
     if (!recorder.audioBlob) return;
-
-    // Get presigned URL
-    const ext = recorder.audioBlob.type.includes("mp4") ? "mp4" : "webm";
-    const { r2Key, uploadUrl } = await requestUpload.mutateAsync({
-      filename: `recording.${ext}`,
-      mimeType: recorder.audioBlob.type,
-    });
-
-    // Upload to R2
-    await fetch(uploadUrl, {
-      method: "PUT",
-      body: recorder.audioBlob,
-      headers: { "Content-Type": recorder.audioBlob.type },
-    });
-
-    // Transcribe + generate SOP
-    await processRecording.mutateAsync({
-      r2Key,
-      question: PROMPTS[activePrompt],
-    });
+    try {
+      // Send the audio inline to the Worker (Whisper + SOP draft) — no R2 needed.
+      const buf = await recorder.audioBlob.arrayBuffer();
+      const audioBase64 = bytesToBase64(new Uint8Array(buf));
+      await processRecording.mutateAsync({
+        audioBase64,
+        question: PROMPTS[activePrompt],
+      });
+    } catch {
+      // Error surfaced via processRecording.error below.
+    }
   };
 
   const handleSave = () => {
@@ -103,12 +103,8 @@ export default function KnowledgePage() {
     !search || s.title.toLowerCase().includes(search.toLowerCase())
   );
 
-  const isProcessing = requestUpload.isPending || processRecording.isPending;
-  const processingStage = requestUpload.isPending
-    ? "Uploading recording…"
-    : processRecording.isPending
-    ? "Transcribing with Whisper…"
-    : null;
+  const isProcessing = processRecording.isPending;
+  const processingStage = processRecording.isPending ? "Transcribing & drafting…" : null;
 
   return (
     <>
@@ -133,6 +129,11 @@ export default function KnowledgePage() {
             <div className="mt-6 flex flex-col items-center gap-4">
               {recorder.error && (
                 <p className="text-sm text-red-400">{recorder.error}</p>
+              )}
+              {processRecording.error && (
+                <p className="max-w-md text-center text-sm text-red-400">
+                  {processRecording.error.message}
+                </p>
               )}
 
               <AnimatePresence mode="wait">

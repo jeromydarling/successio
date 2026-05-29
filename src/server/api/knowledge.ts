@@ -10,7 +10,6 @@ import { eq, and, desc } from "drizzle-orm";
 import { router, protectedProcedure } from "../trpc";
 import { processes, organizations } from "@/db/schema";
 import { makeGateway, MODELS } from "@/lib/ai-gateway";
-import { presignR2Url, r2CredentialsFromEnv } from "@/lib/r2-presign";
 import { buildSopPrompt } from "@/prompts/manufacturing/sop";
 import { nanoid } from "@/lib/nanoid";
 
@@ -23,51 +22,30 @@ const sopSchema = z.object({
 });
 
 export const knowledgeRouter = router({
-  /** Step 1: Get a presigned URL to PUT audio directly to R2. */
-  requestAudioUpload: protectedProcedure
-    .input(z.object({ filename: z.string().min(1).max(255), mimeType: z.string() }))
-    .mutation(async ({ input, ctx }) => {
-      const { orgId } = ctx.session;
-      const safe = input.filename.replace(/[^a-zA-Z0-9._\-]/g, "_").slice(0, 200);
-      const r2Key = `audio/${orgId}/${nanoid()}-${safe}`;
-
-      const uploadUrl = await presignR2Url(
-        r2CredentialsFromEnv(ctx.env),
-        "PUT",
-        r2Key,
-        3600
-      );
-
-      return { r2Key, uploadUrl };
-    }),
-
   /**
-   * Step 2: Given a completed audio upload in R2, run Whisper transcription
-   * and then Claude SOP generation. Returns the drafted SOP for user review.
+   * Transcribe a short voice recording (sent inline as base64) with Workers AI
+   * Whisper, then draft an SOP from it via Workers AI Llama. The audio goes
+   * straight to the Worker — no R2 presign / S3 credentials required.
    */
   processRecording: protectedProcedure
     .input(
       z.object({
-        r2Key: z.string(),
+        audioBase64: z.string().min(1),
         question: z.string().optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
       const { orgId } = ctx.session;
 
-      // Fetch audio from R2
-      const obj = await ctx.env.DOCUMENTS.get(input.r2Key);
-      if (!obj) throw new TRPCError({ code: "NOT_FOUND", message: "Audio file not found in R2" });
-
-      // Transcribe via Workers AI Whisper
-      const audioBytes = await obj.arrayBuffer();
+      // Decode the inline audio and transcribe via Workers AI Whisper.
+      const audioBytes = Uint8Array.from(atob(input.audioBase64), (c) => c.charCodeAt(0));
       const whisperResult = await (ctx.env.AI as any).run("@cf/openai/whisper", {
-        audio: [...new Uint8Array(audioBytes)],
+        audio: [...audioBytes],
       }) as { text: string };
       const transcript = whisperResult.text?.trim() ?? "";
 
       if (!transcript) {
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Whisper returned empty transcript" });
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Couldn't make out any speech in that recording — try again." });
       }
 
       // Fetch org name for context
