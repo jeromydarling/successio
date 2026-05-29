@@ -43,18 +43,19 @@ export default function UploadPage() {
             )
           );
 
-          const { uploadUrl, documentId } = await requestUpload.mutateAsync({
+          const { documentId } = await requestUpload.mutateAsync({
             filename: entry.file.name,
             mimeType: entry.file.type || "application/octet-stream",
             sizeBytes: entry.file.size,
           });
 
-          // Upload directly to R2 presigned URL
-          await fetch(uploadUrl, {
-            method: "PUT",
+          // Upload through the Worker (writes to R2 via the binding — no S3 creds).
+          const res = await fetch(`/api/upload?documentId=${encodeURIComponent(documentId)}`, {
+            method: "POST",
             body: entry.file,
             headers: { "Content-Type": entry.file.type || "application/octet-stream" },
           });
+          if (!res.ok) throw new Error(`Upload failed (${res.status})`);
 
           setFiles((prev) =>
             prev.map((f) =>

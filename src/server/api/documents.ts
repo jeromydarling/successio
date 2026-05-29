@@ -4,14 +4,14 @@ import { eq, and, desc, inArray } from "drizzle-orm";
 import { router, protectedProcedure } from "../trpc";
 import { documents, organizations, extractedEntities } from "@/db/schema";
 import { documentKey, detectFileType } from "@/lib/r2";
-import { presignR2Url, r2CredentialsFromEnv } from "@/lib/r2-presign";
 import { uploadRequestSchema, documentJobSchema } from "@/types";
 import type { Vertical } from "@/lib/verticals";
 import { nanoid } from "@/lib/nanoid";
 
 export const documentsRouter = router({
-  /** Step 1: Client calls this → gets a presigned R2 PUT URL + documentId.
-   *  Step 2: Client PUTs file directly to R2.
+  /** Step 1: Client calls this → creates the document row, returns documentId.
+   *  Step 2: Client POSTs the file bytes to /api/upload?documentId=… (the Worker
+   *          writes them to R2 via the binding — no S3 credentials needed).
    *  Step 3: Client calls confirmUpload with the documentId. */
   requestUpload: protectedProcedure
     .input(uploadRequestSchema)
@@ -20,7 +20,7 @@ export const documentsRouter = router({
       const documentId = nanoid();
       const r2Key = documentKey(orgId, documentId, input.filename);
 
-      // Insert the document record immediately so confirmUpload can find it
+      // Insert the document record immediately so the upload + confirm can find it
       await ctx.db.insert(documents).values({
         id: documentId,
         orgId,
@@ -32,15 +32,7 @@ export const documentsRouter = router({
         status: "queued",
       });
 
-      // Generate a real presigned PUT URL (1 hour) via R2's S3 API.
-      const uploadUrl = await presignR2Url(
-        r2CredentialsFromEnv(ctx.env),
-        "PUT",
-        r2Key,
-        3600
-      );
-
-      return { documentId, uploadUrl, r2Key };
+      return { documentId, r2Key };
     }),
 
   /** Called after the client has successfully PUT to R2.
