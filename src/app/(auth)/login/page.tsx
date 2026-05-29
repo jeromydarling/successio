@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Eye, EyeOff, ArrowRight } from "lucide-react";
@@ -12,7 +11,6 @@ import { loginSchema, type LoginInput } from "@/types";
 import { Button } from "@/components/ui/button";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
 
   const {
@@ -23,9 +21,9 @@ export default function LoginPage() {
   } = useForm<LoginInput>({ resolver: zodResolver(loginSchema) });
 
   const loginMutation = trpc.auth.login.useMutation({
-    onSuccess: (data) => {
-      document.cookie = data.cookie;
-      router.push("/dashboard");
+    onSuccess: () => {
+      // Cookie is set by the server; full navigation ensures the authed load.
+      window.location.href = "/dashboard";
     },
     onError: (err) => {
       setError("root", { message: err.message });

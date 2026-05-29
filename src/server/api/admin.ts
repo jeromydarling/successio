@@ -126,6 +126,7 @@ export const adminRouter = router({
         ctx.env.JWT_SECRET
       );
       const cookie = makeSessionCookie(token, ctx.env.ENVIRONMENT === "production");
+      ctx.resHeaders.append("Set-Cookie", cookie);
       return { associationId: id, slug, cookie };
     }),
 

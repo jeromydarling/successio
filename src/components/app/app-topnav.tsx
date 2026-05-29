@@ -1,18 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Bell, LogOut, User } from "lucide-react";
 import { trpc } from "@/lib/trpc-client";
 import { Button } from "@/components/ui/button";
 
 export function AppTopNav({ title }: { title?: string }) {
-  const router = useRouter();
   const { data: me } = trpc.auth.me.useQuery();
   const logoutMutation = trpc.auth.logout.useMutation({
-    onSuccess: (data) => {
-      document.cookie = data.cookie;
-      router.push("/login");
+    onSuccess: () => {
+      // Server clears the cookie (Set-Cookie); full reload drops cached state.
+      window.location.href = "/login";
     },
   });
 

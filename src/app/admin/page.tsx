@@ -33,8 +33,8 @@ function Onboarding() {
   const [website, setWebsite] = useState("");
 
   const createMutation = trpc.admin.create.useMutation({
-    onSuccess: (data) => {
-      document.cookie = data.cookie;
+    onSuccess: () => {
+      // Session cookie is set by the server (Set-Cookie on the response).
       utils.admin.mine.invalidate();
     },
   });

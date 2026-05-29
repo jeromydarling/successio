@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Eye, EyeOff, ArrowRight, Building2 } from "lucide-react";
@@ -30,7 +30,6 @@ export default function SignupPage() {
 }
 
 function SignupForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const inviteToken = searchParams.get("invite") ?? undefined;
   const [showPassword, setShowPassword] = useState(false);
@@ -57,9 +56,9 @@ function SignupForm() {
   }, [invite, setValue]);
 
   const signupMutation = trpc.auth.signup.useMutation({
-    onSuccess: (data) => {
-      document.cookie = data.cookie;
-      router.push("/dashboard");
+    onSuccess: () => {
+      // Cookie is set by the server; full navigation ensures the authed load.
+      window.location.href = "/dashboard";
     },
     onError: (err) => setError("root", { message: err.message }),
   });

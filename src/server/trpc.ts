@@ -24,6 +24,8 @@ export interface Context {
   };
   session: SessionPayload | null;
   req: Request;
+  /** Response headers merged into the HTTP response — used to set Set-Cookie. */
+  resHeaders: Headers;
 }
 
 const t = initTRPC.context<Context>().create();
@@ -42,7 +44,8 @@ export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
 /** Creates a Context from a raw Request + bound env. */
 export async function createContext(
   req: Request,
-  env: Context["env"] & { DB: D1Database; JWT_SECRET: string }
+  env: Context["env"] & { DB: D1Database; JWT_SECRET: string },
+  resHeaders: Headers = new Headers()
 ): Promise<Context> {
   const { drizzle } = await import("drizzle-orm/d1");
   const db = drizzle(env.DB, { schema: await import("@/db/schema") });
@@ -63,5 +66,6 @@ export async function createContext(
     env,
     session,
     req,
+    resHeaders,
   };
 }

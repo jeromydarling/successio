@@ -79,6 +79,7 @@ export const authRouter = router({
       );
       const isSecure = ctx.env.ENVIRONMENT === "production";
       const cookie = makeSessionCookie(token, isSecure);
+      ctx.resHeaders.append("Set-Cookie", cookie);
 
       return { userId, orgId, cookie };
     }),
@@ -107,6 +108,7 @@ export const authRouter = router({
       );
       const isSecure = ctx.env.ENVIRONMENT === "production";
       const cookie = makeSessionCookie(token, isSecure);
+      ctx.resHeaders.append("Set-Cookie", cookie);
 
       return { userId: user.id, orgId: user.orgId, cookie };
     }),
@@ -140,6 +142,7 @@ export const authRouter = router({
       );
       const isSecure = ctx.env.ENVIRONMENT === "production";
       const cookie = makeSessionCookie(token, isSecure);
+      ctx.resHeaders.append("Set-Cookie", cookie);
 
       return { cookie, redirect: target.redirect };
     }),
@@ -149,7 +152,9 @@ export const authRouter = router({
     if (ctx.session?.jti && ctx.env.SESSIONS) {
       await revokeSession(ctx.env.SESSIONS, ctx.session.jti);
     }
-    return { cookie: clearSessionCookie() };
+    const cookie = clearSessionCookie();
+    ctx.resHeaders.append("Set-Cookie", cookie);
+    return { cookie };
   }),
 
   me: protectedProcedure.query(async ({ ctx }) => {

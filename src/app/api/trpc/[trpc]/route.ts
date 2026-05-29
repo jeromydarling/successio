@@ -47,7 +47,7 @@ async function handler(req: Request): Promise<Response> {
     endpoint: "/api/trpc",
     req,
     router: appRouter,
-    createContext: ({ req }) => createContext(req, env as any),
+    createContext: ({ req, resHeaders }) => createContext(req, env as any, resHeaders),
     onError({ error, path }) {
       if (error.code === "INTERNAL_SERVER_ERROR") {
         console.error(`[tRPC] ${path}:`, error);

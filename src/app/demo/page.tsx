@@ -42,8 +42,8 @@ export default function DemoPage() {
 
   const demoLogin = trpc.auth.demoLogin.useMutation({
     onSuccess: (data) => {
-      document.cookie = data.cookie;
-      // Full navigation so the new session cookie is sent on the document request.
+      // Session cookie is set by the server (Set-Cookie); full navigation so it
+      // is sent on the document request.
       window.location.href = data.redirect;
     },
     onError: () => setPending(null),
