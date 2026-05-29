@@ -6,6 +6,13 @@ compatibility_flags = ["nodejs_compat"]
 # Email Worker, Durable Objects, and Workflow (see worker.ts).
 main = "worker.ts"
 
+# Custom domains — Cloudflare manages DNS + TLS for these and routes all
+# traffic on the hostname to this Worker (zone successio.pro lives in-account).
+routes = [
+  { pattern = "successio.pro", custom_domain = true },
+  { pattern = "www.successio.pro", custom_domain = true }
+]
+
 [assets]
 directory = ".open-next/assets"
 binding = "ASSETS"
