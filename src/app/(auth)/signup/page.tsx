@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Eye, EyeOff, ArrowRight } from "lucide-react";
+import { Eye, EyeOff, ArrowRight, Building2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { trpc } from "@/lib/trpc-client";
 import { signupSchema, type SignupInput } from "@/types";
@@ -22,27 +22,49 @@ const VERTICALS = [
 ] as const;
 
 export default function SignupPage() {
+  return (
+    <Suspense>
+      <SignupForm />
+    </Suspense>
+  );
+}
+
+function SignupForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const inviteToken = searchParams.get("invite") ?? undefined;
   const [showPassword, setShowPassword] = useState(false);
+
+  const { data: invite } = trpc.admin.inviteInfo.useQuery(
+    { token: inviteToken ?? "" },
+    { enabled: !!inviteToken }
+  );
 
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors },
     setError,
   } = useForm<SignupInput>({ resolver: zodResolver(signupSchema) });
+
+  // Prefill from the invite once it resolves.
+  useEffect(() => {
+    if (invite) {
+      setValue("businessName", invite.businessName);
+      setValue("vertical", invite.vertical as SignupInput["vertical"]);
+    }
+  }, [invite, setValue]);
 
   const signupMutation = trpc.auth.signup.useMutation({
     onSuccess: (data) => {
       document.cookie = data.cookie;
       router.push("/dashboard");
     },
-    onError: (err) => {
-      setError("root", { message: err.message });
-    },
+    onError: (err) => setError("root", { message: err.message }),
   });
 
-  const onSubmit = (data: SignupInput) => signupMutation.mutate(data);
+  const onSubmit = (data: SignupInput) => signupMutation.mutate({ ...data, inviteToken });
 
   return (
     <motion.div
@@ -52,48 +74,34 @@ export default function SignupPage() {
       className="rounded-2xl border border-edge bg-canvas-soft/70 p-8 backdrop-blur-xl"
     >
       <h1 className="text-2xl font-semibold text-ink">Start your profile</h1>
-      <p className="mt-1 text-sm text-ink-soft">
-        Takes two minutes. No credit card.
-      </p>
+      <p className="mt-1 text-sm text-ink-soft">Takes two minutes. No credit card.</p>
+
+      {invite?.associationName && (
+        <div className="mt-5 flex items-center gap-2.5 rounded-xl border border-amber/30 bg-amber/[0.06] px-4 py-3 text-sm text-ink">
+          <Building2 className="size-4 shrink-0 text-amber" />
+          <span>Invited by <span className="font-semibold">{invite.associationName}</span> — your profile will be part of their program.</span>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit(onSubmit)} className="mt-7 space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <Field label="Your name" error={errors.name?.message}>
-            <input
-              {...register("name")}
-              type="text"
-              autoComplete="name"
-              placeholder="Carl Brenner"
-              className="input-base"
-            />
+            <input {...register("name")} type="text" autoComplete="name" placeholder="Carl Brenner" className="input-base" />
           </Field>
           <Field label="Email" error={errors.email?.message}>
-            <input
-              {...register("email")}
-              type="email"
-              autoComplete="email"
-              placeholder="carl@shop.com"
-              className="input-base"
-            />
+            <input {...register("email")} type="email" autoComplete="email" placeholder="carl@shop.com" className="input-base" />
           </Field>
         </div>
 
         <Field label="Business name" error={errors.businessName?.message}>
-          <input
-            {...register("businessName")}
-            type="text"
-            placeholder="Brenner Precision Machining"
-            className="input-base"
-          />
+          <input {...register("businessName")} type="text" placeholder="Brenner Precision Machining" className="input-base" />
         </Field>
 
         <Field label="Trade / Industry" error={errors.vertical?.message}>
           <select {...register("vertical")} className="input-base">
             <option value="">Select your trade…</option>
             {VERTICALS.map((v) => (
-              <option key={v.value} value={v.value}>
-                {v.label}
-              </option>
+              <option key={v.value} value={v.value}>{v.label}</option>
             ))}
           </select>
         </Field>
@@ -118,9 +126,7 @@ export default function SignupPage() {
         </Field>
 
         {errors.root && (
-          <p className="rounded-xl bg-red-500/10 px-4 py-3 text-sm text-red-400">
-            {errors.root.message}
-          </p>
+          <p className="rounded-xl bg-red-500/10 px-4 py-3 text-sm text-red-400">{errors.root.message}</p>
         )}
 
         <Button type="submit" className="w-full" disabled={signupMutation.isPending}>
@@ -131,23 +137,13 @@ export default function SignupPage() {
 
       <p className="mt-5 text-center text-sm text-ink-soft">
         Already have an account?{" "}
-        <Link href="/login" className="text-amber-bright hover:text-amber">
-          Sign in
-        </Link>
+        <Link href="/login" className="text-amber-bright hover:text-amber">Sign in</Link>
       </p>
     </motion.div>
   );
 }
 
-function Field({
-  label,
-  error,
-  children,
-}: {
-  label: string;
-  error?: string;
-  children: React.ReactNode;
-}) {
+function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
       <label className="block text-sm font-medium text-ink-soft">{label}</label>

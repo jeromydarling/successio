@@ -2,7 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { router, publicProcedure, protectedProcedure } from "../trpc";
-import { users, organizations } from "@/db/schema";
+import { users, organizations, associationInvites } from "@/db/schema";
 import {
   hashPassword,
   verifyPassword,
@@ -35,10 +35,26 @@ export const authRouter = router({
       const userId = nanoid();
       const passwordHash = await hashPassword(input.password);
 
+      // If joining via an association invite, link the new business to it.
+      let associationId: string | undefined;
+      let inviteId: string | undefined;
+      if (input.inviteToken) {
+        const invite = await ctx.db
+          .select({ id: associationInvites.id, associationId: associationInvites.associationId, status: associationInvites.status })
+          .from(associationInvites)
+          .where(eq(associationInvites.token, input.inviteToken))
+          .get();
+        if (invite && invite.status === "pending") {
+          associationId = invite.associationId;
+          inviteId = invite.id;
+        }
+      }
+
       await ctx.db.insert(organizations).values({
         id: orgId,
         name: input.businessName,
         vertical: input.vertical,
+        associationId,
       });
 
       await ctx.db.insert(users).values({
@@ -49,6 +65,13 @@ export const authRouter = router({
         role: "owner",
         passwordHash,
       });
+
+      if (inviteId) {
+        await ctx.db
+          .update(associationInvites)
+          .set({ status: "claimed", claimedOrgId: orgId })
+          .where(eq(associationInvites.id, inviteId));
+      }
 
       const token = await signSession(
         { sub: userId, orgId, email: input.email.toLowerCase(), role: "owner" },

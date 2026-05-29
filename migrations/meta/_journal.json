@@ -15,6 +15,13 @@
       "when": 1780003322261,
       "tag": "0001_fair_quasar",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1780014522362,
+      "tag": "0002_vengeful_whizzer",
+      "breakpoints": true
     }
   ]
 }

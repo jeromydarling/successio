@@ -1,193 +1,208 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { useState } from "react";
+import Link from "next/link";
 import {
-  Building2, Users, FileText, TrendingUp, BarChart3, Wrench, Truck, Wheat,
+  Building2, Loader2, Users, TrendingUp, FileText, AlertTriangle,
+  ArrowRight, Upload,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc-client";
 import { cn } from "@/lib/utils";
-import { formatUsdCompact } from "@/lib/utils";
-
-const VERTICAL_ICONS: Record<string, React.ElementType> = {
-  manufacturing: Wrench,
-  hvac:          TrendingUp,
-  plumbing:      Wrench,
-  electrical:    TrendingUp,
-  construction:  Building2,
-  trucking:      Truck,
-  agriculture:   Wheat,
-};
 
 export default function AdminPage() {
-  const { data: overview, isLoading: overviewLoading } = trpc.admin.overview.useQuery();
-  const { data: orgs = [], isLoading: orgsLoading } = trpc.admin.listOrgs.useQuery({ limit: 100 });
-  const { data: distribution } = trpc.admin.scoreDistribution.useQuery();
-  const { data: verticals } = trpc.admin.verticalBreakdown.useQuery();
+  const { data: mine, isLoading } = trpc.admin.mine.useQuery();
 
-  const stats = [
-    { label: "Member businesses", value: overview?.orgCount ?? "—", icon: Building2, color: "text-amber" },
-    { label: "Total users",       value: overview?.userCount ?? "—", icon: Users,    color: "text-sky-400" },
-    { label: "Documents uploaded",value: overview?.docCount ?? "—",  icon: FileText, color: "text-violet-400" },
-    { label: "Avg readiness score",value: overview?.avgScore != null ? `${overview.avgScore}` : "—", icon: BarChart3, color: "text-emerald-400" },
-  ];
+  if (isLoading) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Loader2 className="size-6 animate-spin text-ink-faint" />
+      </div>
+    );
+  }
+
+  if (!mine?.association) return <Onboarding />;
+  return <Dashboard associationName={mine.association.name} />;
+}
+
+/* ───────────────────────── Onboarding ───────────────────────── */
+
+function Onboarding() {
+  const utils = trpc.useUtils();
+  const [name, setName] = useState("");
+  const [website, setWebsite] = useState("");
+
+  const createMutation = trpc.admin.create.useMutation({
+    onSuccess: (data) => {
+      document.cookie = data.cookie;
+      utils.admin.mine.invalidate();
+    },
+  });
 
   return (
-    <div className="min-h-screen bg-canvas p-6">
-      <div className="mx-auto max-w-6xl space-y-7">
-        {/* Header */}
-        <div>
-          <h1 className="text-2xl font-semibold text-ink">Association Portal</h1>
-          <p className="mt-1 text-sm text-ink-soft">Aggregate metrics across all member businesses</p>
-        </div>
+    <main className="mx-auto max-w-xl px-6 py-20">
+      <div className="rounded-2xl border border-edge bg-canvas-soft/40 p-8">
+        <span className="flex size-11 items-center justify-center rounded-xl bg-amber/10 ring-1 ring-amber/25">
+          <Building2 className="size-5 text-amber" />
+        </span>
+        <h1 className="mt-5 text-2xl font-semibold tracking-tight text-ink">
+          Set up your association
+        </h1>
+        <p className="mt-2 text-sm text-ink-soft">
+          Create your association to import members, track readiness across your
+          membership, and run a charter pilot under your own brand.
+        </p>
 
-        {/* Stats grid */}
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-          {stats.map((s, i) => (
-            <motion.div
-              key={s.label}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.07 }}
-              className="rounded-2xl border border-edge bg-canvas-soft/50 p-5"
-            >
-              <s.icon className={cn("size-6", s.color)} />
-              <p className="mt-3 font-mono text-3xl font-semibold text-ink tabular-nums">
-                {overviewLoading ? "—" : String(s.value)}
-              </p>
-              <p className="mt-1 text-xs text-ink-faint">{s.label}</p>
-            </motion.div>
-          ))}
-        </div>
-
-        {/* Two-column: verticals + score distribution */}
-        <div className="grid gap-5 lg:grid-cols-2">
-          {/* Vertical breakdown */}
-          {verticals && (
-            <div className="rounded-2xl border border-edge bg-canvas-soft/40 p-5">
-              <h3 className="mb-4 text-sm font-semibold text-ink">Businesses by vertical</h3>
-              <div className="space-y-3">
-                {Object.entries(verticals).sort(([, a], [, b]) => b - a).map(([v, n]) => {
-                  const Icon = VERTICAL_ICONS[v] ?? Building2;
-                  const max = Math.max(...Object.values(verticals));
-                  return (
-                    <div key={v} className="flex items-center gap-3">
-                      <Icon className="size-4 shrink-0 text-amber/70" />
-                      <span className="w-28 shrink-0 text-xs capitalize text-ink-soft">{v}</span>
-                      <div className="flex-1 overflow-hidden">
-                        <motion.div
-                          className="h-1.5 rounded-full bg-amber/40"
-                          initial={{ width: 0 }}
-                          animate={{ width: `${(n / max) * 100}%` }}
-                          transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-                        />
-                      </div>
-                      <span className="font-mono text-xs text-ink-faint">{n}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Score distribution */}
-          {distribution && (
-            <div className="rounded-2xl border border-edge bg-canvas-soft/40 p-5">
-              <h3 className="mb-4 text-sm font-semibold text-ink">Score distribution</h3>
-              <div className="space-y-3">
-                {Object.entries(distribution).map(([range, n]) => {
-                  const max = Math.max(...Object.values(distribution), 1);
-                  const pct = Math.round((n / max) * 100);
-                  const isHigh = range.startsWith("8") || range.startsWith("6");
-                  const isMid = range.startsWith("4");
-                  return (
-                    <div key={range} className="flex items-center gap-3">
-                      <span className="w-16 shrink-0 font-mono text-xs text-ink-faint">{range}</span>
-                      <div className="flex-1 overflow-hidden rounded-full bg-white/10">
-                        <motion.div
-                          className={cn(
-                            "h-1.5 rounded-full",
-                            isHigh ? "bg-emerald-400" : isMid ? "bg-amber" : "bg-red-400/70"
-                          )}
-                          initial={{ width: 0 }}
-                          animate={{ width: `${pct}%` }}
-                          transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-                        />
-                      </div>
-                      <span className="font-mono text-xs text-ink-faint">{n}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Member org table */}
-        <section>
-          <h3 className="mb-3 text-sm font-semibold text-ink">Member businesses</h3>
-          <div className="overflow-hidden rounded-xl border border-edge">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-edge bg-canvas-soft/30">
-                  <th className="px-4 py-3 text-left font-medium text-ink-faint">Business</th>
-                  <th className="px-4 py-3 text-left font-medium text-ink-faint">Vertical</th>
-                  <th className="px-4 py-3 text-left font-medium text-ink-faint">Location</th>
-                  <th className="px-4 py-3 text-right font-medium text-ink-faint">Docs</th>
-                  <th className="px-4 py-3 text-right font-medium text-ink-faint">Score</th>
-                </tr>
-              </thead>
-              <tbody>
-                {orgsLoading ? (
-                  Array.from({ length: 5 }).map((_, i) => (
-                    <tr key={i} className="border-b border-edge/50">
-                      {Array.from({ length: 5 }).map((_, j) => (
-                        <td key={j} className="px-4 py-3">
-                          <div className="h-3 animate-pulse rounded bg-white/[0.04]" />
-                        </td>
-                      ))}
-                    </tr>
-                  ))
-                ) : orgs.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-ink-faint">
-                      No member businesses yet
-                    </td>
-                  </tr>
-                ) : (
-                  orgs.map((org) => (
-                    <tr key={org.id} className="border-b border-edge/50 hover:bg-white/[0.02]">
-                      <td className="px-4 py-3 font-medium text-ink">{org.name}</td>
-                      <td className="px-4 py-3 capitalize text-ink-soft">{org.vertical}</td>
-                      <td className="px-4 py-3 text-ink-soft">{org.location ?? "—"}</td>
-                      <td className="px-4 py-3 text-right font-mono text-ink-faint">{org.docCount}</td>
-                      <td className="px-4 py-3 text-right">
-                        {org.latestScore != null ? (
-                          <ScoreChip score={org.latestScore} />
-                        ) : (
-                          <span className="text-ink-faint">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+        <div className="mt-6 space-y-3">
+          <div>
+            <label className="mb-1 block text-xs text-ink-faint">Association name</label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="National Tooling & Machining Association"
+              className="input-base"
+            />
           </div>
-        </section>
+          <div>
+            <label className="mb-1 block text-xs text-ink-faint">Website (optional)</label>
+            <input
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+              placeholder="https://www.ntma.org"
+              className="input-base"
+            />
+          </div>
+          <Button
+            onClick={() => createMutation.mutate({ name, website: website || undefined })}
+            disabled={name.length < 2 || createMutation.isPending}
+            className="w-full"
+          >
+            {createMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : <Building2 className="size-4" />}
+            Create association
+          </Button>
+          {createMutation.error && (
+            <p className="text-xs text-red-400">{createMutation.error.message}</p>
+          )}
+        </div>
       </div>
-    </div>
+    </main>
   );
 }
 
-function ScoreChip({ score }: { score: number }) {
-  const cls = score >= 70
-    ? "bg-emerald-500/10 text-emerald-400"
-    : score >= 40
-    ? "bg-amber/10 text-amber"
-    : "bg-red-500/10 text-red-400";
+/* ───────────────────────── Dashboard ───────────────────────── */
+
+function Dashboard({ associationName }: { associationName: string }) {
+  const { data: overview } = trpc.admin.overview.useQuery();
+  const { data: members = [] } = trpc.admin.members.useQuery();
+  const { data: report } = trpc.admin.report.useQuery();
+
+  const stats = [
+    { label: "Members", value: String(overview?.memberCount ?? 0), sub: `${overview?.pendingInvites ?? 0} invites pending`, Icon: Users },
+    { label: "Avg readiness", value: String(overview?.avgScore ?? 0), sub: "across the membership", Icon: TrendingUp },
+    { label: "Readiness lift", value: `${(overview?.lift ?? 0) >= 0 ? "+" : ""}${overview?.lift ?? 0}`, sub: "since first snapshot", Icon: TrendingUp },
+    { label: "Docs (30d)", value: String(overview?.recentDocs ?? 0), sub: "processed this month", Icon: FileText },
+  ];
+
   return (
-    <span className={cn("rounded-full px-2 py-0.5 font-mono text-[10px] font-medium", cls)}>
-      {score}
-    </span>
+    <main className="mx-auto max-w-6xl px-6 py-10">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-ink">{associationName}</h1>
+          <p className="mt-0.5 text-sm text-ink-soft">Membership readiness overview</p>
+        </div>
+        <Link href="/admin/members">
+          <Button size="sm"><Upload className="size-4" /> Import members</Button>
+        </Link>
+      </div>
+
+      {/* Stat cards */}
+      <div className="mt-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {stats.map((s) => (
+          <div key={s.label} className="rounded-2xl border border-edge bg-canvas-soft/40 p-5">
+            <s.Icon className="size-4 text-amber" />
+            <div className="mt-3 text-3xl font-semibold tracking-tight text-ink">{s.value}</div>
+            <p className="mt-1 text-xs text-ink-faint">{s.label} · {s.sub}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-3">
+        {/* Roster */}
+        <div className="lg:col-span-2">
+          <h2 className="mb-3 text-sm font-semibold text-ink">Member roster</h2>
+          {members.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-edge bg-canvas-soft/20 py-12 text-center">
+              <p className="text-sm text-ink-soft">No members yet.</p>
+              <Link href="/admin/members" className="mt-2 inline-flex items-center gap-1.5 text-sm text-amber-bright">
+                Import your roster <ArrowRight className="size-4" />
+              </Link>
+            </div>
+          ) : (
+            <ul className="divide-y divide-edge rounded-2xl border border-edge">
+              {members.map((m) => (
+                <li key={m.id}>
+                  <Link href={`/admin/members/${m.id}`} className="flex items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-white/[0.02]">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-ink">{m.name}</p>
+                      <p className="text-xs capitalize text-ink-faint">{m.vertical} · {m.docCount} docs</p>
+                    </div>
+                    <ScorePill score={m.latestScore} />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* At-risk + distribution */}
+        <div className="space-y-6">
+          <div>
+            <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
+              <AlertTriangle className="size-4 text-amber" /> Needs attention
+            </h2>
+            {report && report.atRisk.length > 0 ? (
+              <ul className="space-y-2">
+                {report.atRisk.slice(0, 8).map((r) => (
+                  <li key={r.id}>
+                    <Link href={`/admin/members/${r.id}`} className="flex items-center justify-between rounded-xl border border-edge bg-canvas-soft/40 px-3 py-2 text-sm transition-colors hover:bg-white/[0.02]">
+                      <span className="truncate text-ink-soft">{r.name}</span>
+                      <ScorePill score={r.score} />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-ink-faint">No at-risk members.</p>
+            )}
+          </div>
+
+          {report && (
+            <div>
+              <h2 className="mb-3 text-sm font-semibold text-ink">Readiness distribution</h2>
+              <div className="space-y-2">
+                {Object.entries(report.distribution).map(([bucket, n]) => {
+                  const pct = report.total ? (n / report.total) * 100 : 0;
+                  return (
+                    <div key={bucket} className="flex items-center gap-2">
+                      <span className="w-14 shrink-0 font-mono text-[11px] text-ink-faint">{bucket}</span>
+                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/5">
+                        <div className="h-full rounded-full bg-gradient-to-r from-amber to-amber-bright" style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="w-5 shrink-0 text-right text-xs text-ink-soft">{n}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </main>
   );
+}
+
+function ScorePill({ score }: { score: number | null }) {
+  if (score === null) return <span className="rounded-full bg-white/5 px-2 py-0.5 text-xs text-ink-faint">no score</span>;
+  const cls = score >= 70 ? "bg-emerald-500/15 text-emerald-400" : score >= 40 ? "bg-amber/15 text-amber" : "bg-red-500/15 text-red-400";
+  return <span className={cn("rounded-full px-2.5 py-0.5 font-mono text-xs font-semibold", cls)}>{score}</span>;
 }

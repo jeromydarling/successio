@@ -19,6 +19,8 @@ export const signupSchema = z.object({
     "trucking",
     "agriculture",
   ]),
+  // Optional association invite token — links the new business to its association.
+  inviteToken: z.string().optional(),
 });
 
 export const loginSchema = z.object({

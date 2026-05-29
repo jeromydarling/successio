@@ -14,17 +14,56 @@ const timestamps = {
 
 // ─── Core Entities ────────────────────────────────────────────────────────────
 
-export const organizations = sqliteTable("organizations", {
+export const organizations = sqliteTable(
+  "organizations",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    vertical: text("vertical").notNull(), // manufacturing | hvac | plumbing | electrical | construction | trucking | agriculture
+    location: text("location"),
+    founded: integer("founded"),
+    employeeCount: integer("employee_count"),
+    annualRevenue: real("annual_revenue"),
+    description: text("description"),
+    // Multi-tenant: which association this member business belongs to (if any).
+    associationId: text("association_id"),
+    ...timestamps,
+  },
+  (t) => [index("orgs_assoc_idx").on(t.associationId)]
+);
+
+// ─── Associations (multi-tenant: trade associations / foundations / alliances) ──
+
+export const associations = sqliteTable("associations", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
-  vertical: text("vertical").notNull(), // manufacturing | hvac | plumbing | electrical | construction | trucking | agriculture
-  location: text("location"),
-  founded: integer("founded"),
-  employeeCount: integer("employee_count"),
-  annualRevenue: real("annual_revenue"),
-  description: text("description"),
+  slug: text("slug").notNull().unique(),
+  primaryColor: text("primary_color"),
+  logoUrl: text("logo_url"),
+  website: text("website"),
   ...timestamps,
 });
+
+export const associationInvites = sqliteTable(
+  "association_invites",
+  {
+    id: text("id").primaryKey(),
+    associationId: text("association_id")
+      .notNull()
+      .references(() => associations.id, { onDelete: "cascade" }),
+    businessName: text("business_name").notNull(),
+    contactEmail: text("contact_email").notNull(),
+    vertical: text("vertical").notNull(),
+    token: text("token").notNull().unique(),
+    status: text("status").notNull().default("pending"), // pending | claimed
+    claimedOrgId: text("claimed_org_id"),
+    ...timestamps,
+  },
+  (t) => [
+    index("invites_assoc_idx").on(t.associationId),
+    index("invites_token_idx").on(t.token),
+  ]
+);
 
 export const users = sqliteTable(
   "users",
@@ -35,8 +74,10 @@ export const users = sqliteTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     email: text("email").notNull().unique(),
     name: text("name").notNull(),
-    role: text("role").notNull().default("owner"), // owner | advisor | viewer
+    role: text("role").notNull().default("owner"), // owner | advisor | viewer | association_admin
     passwordHash: text("password_hash").notNull(),
+    // Set for association_admin users — the association they administer.
+    associationId: text("association_id"),
     ...timestamps,
   },
   (t) => [index("users_org_idx").on(t.orgId)]
@@ -357,3 +398,5 @@ export type ExtractedEntity = typeof extractedEntities.$inferSelect;
 export type ReadinessScore = typeof readinessScores.$inferSelect;
 export type ShareToken = typeof shareTokens.$inferSelect;
 export type OrgMilestone = typeof orgMilestones.$inferSelect;
+export type Association = typeof associations.$inferSelect;
+export type AssociationInvite = typeof associationInvites.$inferSelect;
