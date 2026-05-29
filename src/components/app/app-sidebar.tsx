@@ -12,9 +12,11 @@ import {
   FileText,
   Settings,
   ChevronRight,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc-client";
+import { useMobileNav } from "./mobile-nav";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -28,13 +30,48 @@ const NAV = [
 ];
 
 export function AppSidebar() {
+  const { open, setOpen } = useMobileNav();
+
+  return (
+    <>
+      {/* Desktop: persistent sidebar */}
+      <aside className="hidden w-60 shrink-0 flex-col border-r border-edge bg-canvas-soft/40 md:flex">
+        <SidebarBody />
+      </aside>
+
+      {/* Mobile: slide-in drawer + backdrop */}
+      {open && (
+        <div className="fixed inset-0 z-50 md:hidden">
+          <button
+            aria-label="Close menu"
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setOpen(false)}
+          />
+          <aside className="absolute inset-y-0 left-0 flex w-72 max-w-[82%] flex-col border-r border-edge bg-canvas shadow-2xl">
+            <button
+              aria-label="Close menu"
+              onClick={() => setOpen(false)}
+              className="absolute right-3 top-4 z-10 flex size-8 items-center justify-center rounded-lg text-ink-faint transition-colors hover:bg-white/[0.06] hover:text-ink"
+            >
+              <X className="size-5" />
+            </button>
+            <SidebarBody onNavigate={() => setOpen(false)} />
+          </aside>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** The shared sidebar contents — logo, nav, readiness chip. */
+function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const { data: assoc } = trpc.config.association.useQuery(undefined, {
     staleTime: Infinity,
   });
 
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-r border-edge bg-canvas-soft/40">
+    <>
       {/* Logo / white-label branding */}
       <div className="flex items-center gap-2.5 border-b border-edge px-5 py-5">
         {assoc?.logoUrl ? (
@@ -71,6 +108,7 @@ export function AppSidebar() {
               <li key={item.href}>
                 <Link
                   href={item.href}
+                  onClick={onNavigate}
                   className={cn(
                     "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors",
                     active
@@ -92,7 +130,7 @@ export function AppSidebar() {
 
       {/* Readiness score chip */}
       <ReadinessChip />
-    </aside>
+    </>
   );
 }
 
@@ -107,7 +145,7 @@ function ReadinessChip() {
         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
           <div className="h-full w-0 rounded-full bg-gradient-to-r from-amber to-amber-bright" />
         </div>
-        <p className="mt-2 text-[11px] text-ink-faint">Upload your first document to begin</p>
+        <p className="mt-2 text-[11px] text-ink-faint">Open the dashboard for your live score</p>
       </div>
     </div>
   );
