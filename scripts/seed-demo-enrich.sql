@@ -40,3 +40,17 @@ INSERT OR REPLACE INTO processes (id, org_id, title, steps, owner, source) VALUE
  ('demo-m1-proc-2','demo-m1','First-article inspection (FAI)','["Pull the first part off the run","Measure all critical dimensions on the CMM","Record results against the drawing","QC sign-off before the full run","File the FAI report per ISO 9001"]','Linda Park','manual'),
  ('demo-m1-proc-3','demo-m1','Machine setup and changeover','["Stage material and tooling","Load and prove out the program","Set work and tool offsets","Run and verify the first piece","Release to the operator"]','Marcus Reed','manual'),
  ('demo-m1-proc-4','demo-m1','Job traveler workflow','["Open the traveler at job release","Stamp each operation as completed","Attach inspection records","Foreman final review","Close the traveler and archive"]','Marcus Reed','manual');
+
+-- ── Extracted entities per demo document (so the Vault slide-over shows a
+--    populated "Extracted entities" panel with confidence badges) ──
+DELETE FROM extracted_entities WHERE id LIKE 'demo-m1-ent-%';
+INSERT INTO extracted_entities (id, document_id, org_id, entity_type, data, confidence, needs_review) VALUES
+ ('demo-m1-ent-cust','dd-1','demo-m1','customer',
+  '[{"name":"Goodyear Tire & Rubber","revenueShare":0.19,"contractStatus":"active"},{"name":"Babcock & Wilcox","revenueShare":0.14,"contractStatus":"active"},{"name":"Summit Hydraulics","revenueShare":0.11,"contractStatus":"month-to-month"},{"name":"Akron Aerospace Parts","revenueShare":0.10,"contractStatus":"active"},{"name":"Lubrizol","revenueShare":0.08,"contractStatus":"active"},{"name":"Davey Tree Equipment","revenueShare":0.07,"contractStatus":"active"}]',
+  0.93, 0),
+ ('demo-m1-ent-fin','dd-2','demo-m1','financial',
+  '[{"year":2021,"revenue":5100000,"grossProfit":1632000,"ebitda":765000},{"year":2022,"revenue":5420000,"grossProfit":1734400,"ebitda":813000},{"year":2023,"revenue":5680000,"grossProfit":1817600,"ebitda":852000}]',
+  0.88, 0),
+ ('demo-m1-ent-equip','dd-3','demo-m1','equipment',
+  '[{"name":"Haas VF-4 Vertical Mill","yearInstalled":2009,"condition":"good"},{"name":"Mazak Integrex 5-axis Cell","yearInstalled":2016,"condition":"excellent"},{"name":"Okuma LB3000 CNC Lathe","yearInstalled":2012,"condition":"good"},{"name":"Bridgeport Series I Manual Mill","yearInstalled":1994,"condition":"fair"},{"name":"Zeiss Contura CMM","yearInstalled":2018,"condition":"excellent"}]',
+  0.71, 0);
