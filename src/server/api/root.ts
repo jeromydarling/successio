@@ -7,6 +7,7 @@ import { profilesRouter } from "./profiles";
 import { adminRouter } from "./admin";
 import { historyRouter } from "./history";
 import { configRouter } from "./config";
+import { legacyRouter } from "./legacy";
 
 export const appRouter = router({
   auth: authRouter,
@@ -17,6 +18,7 @@ export const appRouter = router({
   admin: adminRouter,
   history: historyRouter,
   config: configRouter,
+  legacy: legacyRouter,
 });
 
 export type AppRouter = typeof appRouter;

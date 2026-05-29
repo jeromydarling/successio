@@ -8,6 +8,7 @@ import {
   FolderOpen,
   Mic,
   History,
+  BookOpen,
   FileText,
   Settings,
   ChevronRight,
@@ -21,6 +22,7 @@ const NAV = [
   { href: "/vault", label: "Document Vault", icon: FolderOpen },
   { href: "/knowledge", label: "Knowledge", icon: Mic },
   { href: "/history", label: "History", icon: History },
+  { href: "/legacy", label: "Legacy Book", icon: BookOpen },
   { href: "/profile", label: "Deal Room", icon: FileText },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

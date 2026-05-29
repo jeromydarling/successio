@@ -2,7 +2,8 @@
 
 import { use } from "react";
 import Link from "next/link";
-import { ArrowLeft, Loader2, FileText, Flag, CheckCircle2, Circle } from "lucide-react";
+import { ArrowLeft, Loader2, FileText, Flag, CheckCircle2, Circle, BookOpen } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc-client";
 import { cn } from "@/lib/utils";
 
@@ -46,6 +47,12 @@ export default function MemberDetailPage({ params }: { params: Promise<{ orgId: 
             readiness{lift !== null && ` · ${lift >= 0 ? "+" : ""}${lift} lift`}
           </p>
         </div>
+      </div>
+
+      <div className="mt-4">
+        <Link href={`/legacy?orgId=${org.id}`}>
+          <Button size="sm" variant="outline"><BookOpen className="size-4" /> Preview Legacy Book</Button>
+        </Link>
       </div>
 
       {/* Score history sparkline */}
