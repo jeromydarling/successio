@@ -26,7 +26,15 @@ const handler = openNextHandler as {
 };
 
 export default {
-  fetch: handler.fetch,
+  async fetch(req: Request, env: unknown, ctx: ExecutionContext): Promise<Response> {
+    // Redirect www → apex (301, path + query preserved) for clean canonical URLs.
+    const url = new URL(req.url);
+    if (url.hostname === "www.successio.pro") {
+      url.hostname = "successio.pro";
+      return Response.redirect(url.toString(), 301);
+    }
+    return handler.fetch(req, env, ctx);
+  },
 
   // Queue consumer (document-jobs) — delegates to the existing ingest handler.
   queue: ingestConsumer.queue,
