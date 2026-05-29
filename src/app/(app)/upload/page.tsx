@@ -5,6 +5,7 @@ import { useDropzone } from "react-dropzone";
 import { motion, AnimatePresence } from "framer-motion";
 import { Upload, FileText, X, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
 import { AppTopNav } from "@/components/app/app-topnav";
+import { DocumentConnectors } from "@/components/upload/connectors";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc-client";
 import { cn } from "@/lib/utils";
@@ -137,6 +138,9 @@ export default function UploadPage() {
               </p>
               </div>
             </motion.div>
+
+            {/* Cloud storage connectors */}
+            <DocumentConnectors />
           </div>
 
           {/* File list */}

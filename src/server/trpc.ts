@@ -21,6 +21,12 @@ export interface Context {
     R2_SECRET_ACCESS_KEY?: string;
     R2_BUCKET_NAME?: string;
     ENVIRONMENT: string;
+    // Cloud-connector public client IDs/keys (picker flows — not secrets).
+    DROPBOX_APP_KEY?: string;
+    GOOGLE_PICKER_API_KEY?: string;
+    GOOGLE_OAUTH_CLIENT_ID?: string;
+    MS_CLIENT_ID?: string;
+    MS_TENANT_ID?: string;
   };
   session: SessionPayload | null;
   req: Request;
