@@ -21,7 +21,20 @@ const bookSchema = z.object({
   title: z.string(),
   subtitle: z.string().optional().default(""),
   dedication: z.string().optional().default(""),
-  chapters: z.array(z.object({ title: z.string(), body: z.string() })).default([]),
+  chapters: z
+    .array(
+      z
+        .object({
+          title: z.string(),
+          paragraphs: z.array(z.string()).optional(),
+          body: z.string().optional(),
+        })
+        .transform((c) => ({
+          title: c.title,
+          paragraphs: c.paragraphs ?? (c.body ? c.body.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean) : []),
+        }))
+    )
+    .default([]),
   byTheNumbers: z.array(z.object({ label: z.string(), value: z.string() })).default([]),
   closing: z.string().optional().default(""),
 });
