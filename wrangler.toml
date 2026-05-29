@@ -31,15 +31,10 @@ binding = "DOCUMENTS"
 bucket_name = "successio-documents"
 
 # Semantic search over document chunks (index: 768-dim, cosine — bge-base-en-v1.5).
-# TEMPORARILY DISABLED: the successio-docs Vectorize index isn't created in the
-# account and the CI deploy token lacks Vectorize permission. All VECTORS usage
-# in code is optional/guarded, so the app runs fine without it (semantic vault
-# search just returns empty). Re-enable by creating the index + granting the
-# token Vectorize Edit, then uncommenting:
-#   wrangler vectorize create successio-docs --dimensions=768 --metric=cosine
-# [[vectorize]]
-# binding = "VECTORS"
-# index_name = "successio-docs"
+# The CI workflow creates this index before deploy (token has Vectorize:Edit).
+[[vectorize]]
+binding = "VECTORS"
+index_name = "successio-docs"
 
 [[kv_namespaces]]
 binding = "SESSIONS"
