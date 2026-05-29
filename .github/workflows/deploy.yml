@@ -26,14 +26,6 @@ jobs:
           cache: "npm"
       - run: npm ci
       - run: npm run test
-      # Ensure the Vectorize index the Worker binds to exists (idempotent —
-      # "already exists" is fine). Without it, `wrangler deploy` fails binding
-      # validation. Dims/metric match bge-base-en-v1.5.
-      - name: Ensure Vectorize index
-        run: npx wrangler vectorize create successio-docs --dimensions=768 --metric=cosine || true
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: f84f7181c051be0040e972dcad48e697
       - run: npm run deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
