@@ -32,6 +32,7 @@ interface PipelineEnv {
   AI: Ai;
   VECTORS?: VectorizeIndex;
   PROCESSING_STATE?: DurableObjectNamespace;
+  BROWSER?: unknown;
   CF_ACCOUNT_ID?: string;
   CF_AI_GATEWAY_ID: string;
   ANTHROPIC_API_KEY?: string;
@@ -74,7 +75,7 @@ export class DocumentPipeline extends WorkflowEntrypoint<PipelineEnv, DocumentJo
 
       const { makeGateway } = await import("@/lib/ai-gateway");
       const fileName = r2Key.split("/").pop() || r2Key;
-      const result = await runOcr({ fileType, fileName, r2Object: obj, gateway: makeGateway(env) });
+      const result = await runOcr({ fileType, fileName, r2Object: obj, gateway: makeGateway(env), browser: env.BROWSER });
 
       await db.update(schema.documents)
         .set({ ocrText: result.text, ocrConfidence: result.confidence, status: "extracting" })
