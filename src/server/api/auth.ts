@@ -111,6 +111,39 @@ export const authRouter = router({
       return { userId: user.id, orgId: user.orgId, cookie };
     }),
 
+  /**
+   * One-click demo sign-in. No password — mints a session for one of two
+   * pre-seeded read-only demo personas so visitors can explore the real app.
+   * Restricted to a hardcoded allowlist of demo accounts.
+   */
+  demoLogin: publicProcedure
+    .input(z.object({ persona: z.enum(["owner", "association"]) }))
+    .mutation(async ({ input, ctx }) => {
+      const DEMO = {
+        owner: { email: "owner1@heartland-demo.org", redirect: "/dashboard" },
+        association: { email: "director@heartland-demo.org", redirect: "/admin" },
+      } as const;
+      const target = DEMO[input.persona];
+
+      const user = await ctx.db
+        .select()
+        .from(users)
+        .where(eq(users.email, target.email))
+        .get();
+      if (!user) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Demo is not available right now." });
+      }
+
+      const token = await signSession(
+        { sub: user.id, orgId: user.orgId, email: user.email, role: user.role },
+        ctx.env.JWT_SECRET
+      );
+      const isSecure = ctx.env.ENVIRONMENT === "production";
+      const cookie = makeSessionCookie(token, isSecure);
+
+      return { cookie, redirect: target.redirect };
+    }),
+
   logout: publicProcedure.mutation(async ({ ctx }) => {
     // Revoke the current token id so the JWT can't be replayed before expiry.
     if (ctx.session?.jti && ctx.env.SESSIONS) {
