@@ -12,6 +12,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import * as schema from "@/db/schema";
 import { makeGateway, MODELS } from "@/lib/ai-gateway";
+import { extractJson } from "@/lib/json";
 import { getExtractPrompt } from "@/prompts/extract-registry";
 import { CONFIDENCE_THRESHOLD } from "@/prompts/shared/extract";
 import { nanoid } from "@/lib/nanoid";
@@ -129,9 +130,7 @@ export async function runExtraction(params: ExtractionParams): Promise<void> {
       temperature: 0,
     });
 
-    // Strip any markdown fences Claude might add
-    const cleaned = result.content.replace(/^```json\s*/m, "").replace(/\s*```$/m, "").trim();
-    const raw = JSON.parse(cleaned);
+    const raw = JSON.parse(extractJson(result.content));
     parsed = extractionOutputSchema.parse(raw);
   } catch (err) {
     console.error("[extract] Parse/call failed, routing to review:", err);

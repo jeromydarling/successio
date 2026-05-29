@@ -85,8 +85,9 @@ export default function ProfilePage() {
   });
 
   const exportPdfMutation = trpc.profiles.exportPdf.useMutation({
-    onSuccess: (data) => {
-      window.open(data.downloadUrl, "_blank", "noopener,noreferrer");
+    onSuccess: () => {
+      // PDF is streamed from R2 by the Worker route.
+      window.open("/api/profile-pdf", "_blank", "noopener,noreferrer");
     },
   });
 

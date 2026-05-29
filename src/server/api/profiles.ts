@@ -20,9 +20,9 @@ import {
   equipment,
 } from "@/db/schema";
 import { makeGateway, MODELS } from "@/lib/ai-gateway";
+import { extractJson } from "@/lib/json";
 import { buildProfilePrompt } from "@/prompts/manufacturing/profile";
 import { renderProfilePdf } from "@/lib/pdf";
-import { presignR2Url, r2CredentialsFromEnv } from "@/lib/r2-presign";
 import { nanoid } from "@/lib/nanoid";
 
 const SECTION_LABELS: Record<string, string> = {
@@ -91,8 +91,7 @@ export const profilesRouter = router({
       temperature: 0.3,
     });
 
-    const cleaned = result.content.replace(/^```json\s*/m, "").replace(/\s*```$/m, "").trim();
-    const content = profileContentSchema.parse(JSON.parse(cleaned));
+    const content = profileContentSchema.parse(JSON.parse(extractJson(result.content)));
 
     // Upsert profile (one per org for MVP)
     const existing = await ctx.db
@@ -176,8 +175,9 @@ export const profilesRouter = router({
     });
     await ctx.db.update(businessProfiles).set({ pdfR2Key: r2Key }).where(eq(businessProfiles.id, profile.id));
 
-    const downloadUrl = await presignR2Url(r2CredentialsFromEnv(ctx.env), "GET", r2Key, 3600);
-    return { downloadUrl };
+    // The bytes are served by GET /api/profile-pdf (streamed from R2 via the
+    // binding) — no presigned URL / S3 credentials needed.
+    return { ready: true };
   }),
 
   /** Create or retrieve a share token for a given tier. */

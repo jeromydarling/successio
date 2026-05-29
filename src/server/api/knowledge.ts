@@ -10,6 +10,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { router, protectedProcedure } from "../trpc";
 import { processes, organizations } from "@/db/schema";
 import { makeGateway, MODELS } from "@/lib/ai-gateway";
+import { extractJson } from "@/lib/json";
 import { buildSopPrompt } from "@/prompts/manufacturing/sop";
 import { nanoid } from "@/lib/nanoid";
 
@@ -70,8 +71,15 @@ export const knowledgeRouter = router({
         temperature: 0,
       });
 
-      const cleaned = result.content.replace(/^```json\s*/m, "").replace(/\s*```$/m, "").trim();
-      const sop = sopSchema.parse(JSON.parse(cleaned));
+      let sop;
+      try {
+        sop = sopSchema.parse(JSON.parse(extractJson(result.content)));
+      } catch {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Couldn't structure that into an SOP — try recording again, a bit more clearly.",
+        });
+      }
 
       return { transcript, sop };
     }),

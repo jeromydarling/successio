@@ -14,6 +14,7 @@ import {
   organizations, users, customers, financials, employees, processes, orgMilestones, businessProfiles,
 } from "@/db/schema";
 import { makeGateway, MODELS } from "@/lib/ai-gateway";
+import { extractJson } from "@/lib/json";
 import { LEGACY_SYSTEM, buildLegacyBookPrompt } from "@/prompts/shared/legacy-book";
 
 const bookSchema = z.object({
@@ -97,10 +98,9 @@ export const legacyRouter = router({
         temperature: 0.4,
       });
 
-      const cleaned = result.content.replace(/^```json\s*/m, "").replace(/\s*```$/m, "").trim();
       let book: LegacyBook;
       try {
-        book = bookSchema.parse(JSON.parse(cleaned));
+        book = bookSchema.parse(JSON.parse(extractJson(result.content)));
       } catch {
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Could not compose the book — try again." });
       }
