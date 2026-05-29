@@ -6,12 +6,11 @@ compatibility_flags = ["nodejs_compat"]
 # Email Worker, Durable Objects, and Workflow (see worker.ts).
 main = "worker.ts"
 
-# Custom domains — Cloudflare manages DNS + TLS for both. The apex serves the
-# app; www is redirected to the apex (301) in the Worker fetch handler.
-routes = [
-  { pattern = "successio.pro", custom_domain = true },
-  { pattern = "www.successio.pro", custom_domain = true }
-]
+# Custom domains (successio.pro + www.successio.pro) are managed in the
+# Cloudflare dashboard (Workers → successio → Domains & Routes), so they are
+# intentionally NOT declared here — declaring them makes `wrangler deploy` try
+# to recreate them and fail with a conflict. The www → apex 301 redirect is
+# handled in worker.ts and works regardless of how the domain is attached.
 
 [assets]
 directory = ".open-next/assets"
