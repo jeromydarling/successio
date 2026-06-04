@@ -17,14 +17,19 @@
 
 import { WorkflowEntrypoint, type WorkflowStep, type WorkflowEvent } from "cloudflare:workers";
 import { drizzle } from "drizzle-orm/d1";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray, count } from "drizzle-orm";
 import * as schema from "@/db/schema";
 import { detectFileType } from "@/lib/r2";
 import { runOcr } from "@/lib/ocr";
 import { runExtraction } from "@/server/workers/extract";
 import { runEmbedding } from "@/server/workers/embed";
 import { recalculateScore } from "@/server/workers/score";
+import { getEmailSender } from "@/lib/email/sender";
+import { processingCompleteEmail } from "@/lib/email/templates";
 import type { DocumentJob } from "@/types";
+
+/** Document statuses that mean "still being worked on" (vs. a terminal state). */
+const IN_FLIGHT_STATUSES = ["queued", "ocr", "extracting", "embedding"] as const;
 
 interface PipelineEnv {
   DB: D1Database;
@@ -38,6 +43,11 @@ interface PipelineEnv {
   ANTHROPIC_API_KEY?: string;
   GOOGLE_AI_API_KEY?: string;
   MISTRAL_API_KEY?: string;
+  // Email Sending — same bindings/vars declared in wrangler.toml.
+  EMAIL?: { send: (m: unknown) => Promise<{ messageId?: string }> };
+  CF_API_TOKEN?: string;
+  EMAIL_FROM?: string;
+  APP_URL?: string;
 }
 
 export class DocumentPipeline extends WorkflowEntrypoint<PipelineEnv, DocumentJob> {
@@ -107,8 +117,8 @@ export class DocumentPipeline extends WorkflowEntrypoint<PipelineEnv, DocumentJo
     });
 
     // ── Step 5: Recalculate readiness score ───────────────────────────────────
-    await step.do("update_readiness_score", async () => {
-      await recalculateScore({ orgId, vertical, env });
+    const { score } = await step.do("update_readiness_score", async () => {
+      return recalculateScore({ orgId, vertical, env });
     });
 
     // ── Step 6: Flag items needing review ─────────────────────────────────────
@@ -127,6 +137,65 @@ export class DocumentPipeline extends WorkflowEntrypoint<PipelineEnv, DocumentJo
       await db.update(schema.documents)
         .set({ status: flagged.length > 0 ? "needs_review" : "complete" })
         .where(eq(schema.documents.id, documentId));
+    });
+
+    // ── Step 7: Notify the owner when the upload batch finishes ────────────────
+    // Each document is its own workflow, so emailing per-document would spam a
+    // bulk upload. Instead we only notify once nothing else for this org is
+    // still in flight — so a 20-file upload yields a single summary email.
+    await step.do("notify_owner", async () => {
+      const stillProcessing = await db
+        .select({ id: schema.documents.id })
+        .from(schema.documents)
+        .where(
+          and(
+            eq(schema.documents.orgId, orgId),
+            inArray(schema.documents.status, [...IN_FLIGHT_STATUSES])
+          )
+        )
+        .all();
+      if (stillProcessing.length > 0) return { sent: false, reason: "batch in flight" };
+
+      const owner = await db
+        .select({ name: schema.users.name, email: schema.users.email })
+        .from(schema.users)
+        .where(and(eq(schema.users.orgId, orgId), eq(schema.users.role, "owner")))
+        .get();
+      if (!owner) return { sent: false, reason: "no owner" };
+
+      const org = await db
+        .select({ name: schema.organizations.name })
+        .from(schema.organizations)
+        .where(eq(schema.organizations.id, orgId))
+        .get();
+
+      const processed = await db
+        .select({ n: count() })
+        .from(schema.documents)
+        .where(
+          and(
+            eq(schema.documents.orgId, orgId),
+            inArray(schema.documents.status, ["complete", "needs_review"])
+          )
+        )
+        .get();
+
+      const base = env.APP_URL || "https://successio.pro";
+      const mail = processingCompleteEmail({
+        name: owner.name,
+        orgName: org?.name ?? "your business",
+        documentCount: processed?.n ?? 1,
+        score,
+        url: `${base}/dashboard`,
+      });
+      try {
+        await getEmailSender(env).send({ to: owner.email, ...mail });
+        return { sent: true };
+      } catch (err) {
+        // Never fail the pipeline over a notification.
+        console.error("[pipeline] completion email failed:", err);
+        return { sent: false, reason: "send error" };
+      }
     });
   }
 }
