@@ -27,6 +27,11 @@ export interface Context {
     GOOGLE_OAUTH_CLIENT_ID?: string;
     MS_CLIENT_ID?: string;
     MS_TENANT_ID?: string;
+    // Cloudflare Email Sending: native binding (preferred) + REST fallback.
+    EMAIL?: { send: (m: unknown) => Promise<{ messageId?: string }> };
+    CF_API_TOKEN?: string;
+    EMAIL_FROM?: string;
+    APP_URL?: string;
   };
   session: SessionPayload | null;
   req: Request;

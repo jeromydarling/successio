@@ -22,6 +22,13 @@
       "when": 1780014522362,
       "tag": "0002_vengeful_whizzer",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1780537177228,
+      "tag": "0003_violet_star_brand",
+      "breakpoints": true
     }
   ]
 }

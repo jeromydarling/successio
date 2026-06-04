@@ -19,6 +19,8 @@ import {
 } from "@/db/schema";
 import { signSession, makeSessionCookie } from "@/lib/auth";
 import { nanoid } from "@/lib/nanoid";
+import { getEmailSender } from "@/lib/email/sender";
+import { associationInviteEmail } from "@/lib/email/templates";
 
 type DB = DrizzleD1Database<typeof schema>;
 
@@ -260,6 +262,30 @@ export const adminRouter = router({
         status: "pending" as const,
       }));
       await ctx.db.insert(associationInvites).values(created);
+
+      // Email each invitee a join link (best-effort — don't fail the import).
+      const assoc = await ctx.db
+        .select({ name: associations.name })
+        .from(associations)
+        .where(eq(associations.id, ctx.associationId))
+        .get();
+      const base = ctx.env.APP_URL || "https://successio.pro";
+      const sender = getEmailSender(ctx.env);
+      await Promise.all(
+        created.map(async (c) => {
+          const mail = associationInviteEmail({
+            associationName: assoc?.name ?? "Your association",
+            businessName: c.businessName,
+            url: `${base}/signup?invite=${c.token}`,
+          });
+          try {
+            await sender.send({ to: c.contactEmail, ...mail });
+          } catch (err) {
+            console.error(`[admin] invite email failed for ${c.contactEmail}:`, err);
+          }
+        })
+      );
+
       return created.map((c) => ({ id: c.id, businessName: c.businessName, token: c.token }));
     }),
 

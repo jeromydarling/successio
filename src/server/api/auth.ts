@@ -1,8 +1,8 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { router, publicProcedure, protectedProcedure } from "../trpc";
-import { users, organizations, associationInvites } from "@/db/schema";
+import { users, organizations, associationInvites, authTokens } from "@/db/schema";
 import {
   hashPassword,
   verifyPassword,
@@ -13,6 +13,31 @@ import {
 } from "@/lib/auth";
 import { signupSchema, loginSchema } from "@/types";
 import { nanoid } from "@/lib/nanoid";
+import { getEmailSender } from "@/lib/email/sender";
+import { passwordResetEmail, verifyEmail } from "@/lib/email/templates";
+import { generateRawToken, hashToken, expiryFor, type TokenKind } from "@/lib/email/tokens";
+
+/** Base URL for links in emails. */
+function appUrl(env: { APP_URL?: string }): string {
+  return env.APP_URL || "https://successio.pro";
+}
+
+/** Issue a single-use token for a user+kind, returning the raw token. */
+async function issueToken(
+  db: import("drizzle-orm/d1").DrizzleD1Database<typeof import("@/db/schema")>,
+  userId: string,
+  kind: TokenKind
+): Promise<string> {
+  const raw = generateRawToken();
+  await db.insert(authTokens).values({
+    id: nanoid(),
+    userId,
+    kind,
+    tokenHash: await hashToken(raw),
+    expiresAt: expiryFor(kind),
+  });
+  return raw;
+}
 
 export const authRouter = router({
   signup: publicProcedure
@@ -80,6 +105,16 @@ export const authRouter = router({
       const isSecure = ctx.env.ENVIRONMENT === "production";
       const cookie = makeSessionCookie(token, isSecure);
       ctx.resHeaders.append("Set-Cookie", cookie);
+
+      // Send an email-verification link (best-effort — don't block signup).
+      try {
+        const raw = await issueToken(ctx.db, userId, "email_verify");
+        const url = `${appUrl(ctx.env)}/verify-email?token=${raw}`;
+        const mail = verifyEmail({ name: input.name, url });
+        await getEmailSender(ctx.env).send({ to: input.email.toLowerCase(), ...mail });
+      } catch (err) {
+        console.error("[auth] signup verification email failed:", err);
+      }
 
       return { userId, orgId, cookie };
     }),
@@ -157,6 +192,101 @@ export const authRouter = router({
     return { cookie };
   }),
 
+  /** Request a password-reset link. Always returns ok (no account enumeration). */
+  requestPasswordReset: publicProcedure
+    .input(z.object({ email: z.string().email() }))
+    .mutation(async ({ input, ctx }) => {
+      const user = await ctx.db
+        .select({ id: users.id, name: users.name, email: users.email })
+        .from(users)
+        .where(eq(users.email, input.email.toLowerCase()))
+        .get();
+
+      if (user) {
+        const raw = await issueToken(ctx.db, user.id, "password_reset");
+        const url = `${appUrl(ctx.env)}/reset-password?token=${raw}`;
+        const mail = passwordResetEmail({ name: user.name, url });
+        try {
+          await getEmailSender(ctx.env).send({ to: user.email, ...mail });
+        } catch (err) {
+          console.error("[auth] password reset email failed:", err);
+        }
+      }
+      return { ok: true };
+    }),
+
+  /** Complete a password reset with a valid, unused, unexpired token. */
+  resetPassword: publicProcedure
+    .input(z.object({ token: z.string().min(10), password: z.string().min(8).max(200) }))
+    .mutation(async ({ input, ctx }) => {
+      const tokenHash = await hashToken(input.token);
+      const row = await ctx.db
+        .select()
+        .from(authTokens)
+        .where(and(eq(authTokens.tokenHash, tokenHash), eq(authTokens.kind, "password_reset")))
+        .get();
+
+      if (!row || row.usedAt || row.expiresAt.getTime() < Date.now()) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This reset link is invalid or has expired." });
+      }
+
+      await ctx.db
+        .update(users)
+        .set({ passwordHash: await hashPassword(input.password) })
+        .where(eq(users.id, row.userId));
+      await ctx.db.update(authTokens).set({ usedAt: new Date() }).where(eq(authTokens.id, row.id));
+
+      // Revoke any outstanding reset tokens for this user.
+      await ctx.db
+        .update(authTokens)
+        .set({ usedAt: new Date() })
+        .where(and(eq(authTokens.userId, row.userId), eq(authTokens.kind, "password_reset")));
+
+      return { ok: true };
+    }),
+
+  /** Send (or resend) an email-verification link to the signed-in user. */
+  sendVerificationEmail: protectedProcedure.mutation(async ({ ctx }) => {
+    const user = await ctx.db
+      .select({ id: users.id, name: users.name, email: users.email, emailVerifiedAt: users.emailVerifiedAt })
+      .from(users)
+      .where(eq(users.id, ctx.session.sub))
+      .get();
+    if (!user) throw new TRPCError({ code: "NOT_FOUND" });
+    if (user.emailVerifiedAt) return { ok: true, alreadyVerified: true };
+
+    const raw = await issueToken(ctx.db, user.id, "email_verify");
+    const url = `${appUrl(ctx.env)}/verify-email?token=${raw}`;
+    const mail = verifyEmail({ name: user.name, url });
+    try {
+      await getEmailSender(ctx.env).send({ to: user.email, ...mail });
+    } catch (err) {
+      console.error("[auth] verification email failed:", err);
+      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Couldn't send the email — try again shortly." });
+    }
+    return { ok: true };
+  }),
+
+  /** Confirm an email address from a verification token. */
+  verifyEmailToken: publicProcedure
+    .input(z.object({ token: z.string().min(10) }))
+    .mutation(async ({ input, ctx }) => {
+      const tokenHash = await hashToken(input.token);
+      const row = await ctx.db
+        .select()
+        .from(authTokens)
+        .where(and(eq(authTokens.tokenHash, tokenHash), eq(authTokens.kind, "email_verify")))
+        .get();
+
+      if (!row || row.usedAt || row.expiresAt.getTime() < Date.now()) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This confirmation link is invalid or has expired." });
+      }
+
+      await ctx.db.update(users).set({ emailVerifiedAt: new Date() }).where(eq(users.id, row.userId));
+      await ctx.db.update(authTokens).set({ usedAt: new Date() }).where(eq(authTokens.id, row.id));
+      return { ok: true };
+    }),
+
   me: protectedProcedure.query(async ({ ctx }) => {
     const user = await ctx.db
       .select({
@@ -165,6 +295,7 @@ export const authRouter = router({
         email: users.email,
         role: users.role,
         orgId: users.orgId,
+        emailVerifiedAt: users.emailVerifiedAt,
       })
       .from(users)
       .where(eq(users.id, ctx.session.sub))
@@ -173,6 +304,6 @@ export const authRouter = router({
     if (!user) {
       throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
     }
-    return user;
+    return { ...user, emailVerified: !!user.emailVerifiedAt };
   }),
 });

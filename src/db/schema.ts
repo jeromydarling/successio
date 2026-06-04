@@ -78,9 +78,35 @@ export const users = sqliteTable(
     passwordHash: text("password_hash").notNull(),
     // Set for association_admin users — the association they administer.
     associationId: text("association_id"),
+    // Email verification: null until the user confirms their address.
+    emailVerifiedAt: integer("email_verified_at", { mode: "timestamp" }),
     ...timestamps,
   },
   (t) => [index("users_org_idx").on(t.orgId)]
+);
+
+/**
+ * Single-use, expiring tokens for email flows (password reset, email
+ * verification). The token value is stored hashed; the raw token only ever
+ * lives in the emailed link.
+ */
+export const authTokens = sqliteTable(
+  "auth_tokens",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(), // password_reset | email_verify
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+    usedAt: integer("used_at", { mode: "timestamp" }),
+    ...timestamps,
+  },
+  (t) => [
+    index("auth_tokens_user_idx").on(t.userId),
+    uniqueIndex("auth_tokens_hash_idx").on(t.tokenHash),
+  ]
 );
 
 export const sessions = sqliteTable(
@@ -392,6 +418,7 @@ export type Organization = typeof organizations.$inferSelect;
 export type NewOrganization = typeof organizations.$inferInsert;
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
+export type AuthToken = typeof authTokens.$inferSelect;
 export type Document = typeof documents.$inferSelect;
 export type NewDocument = typeof documents.$inferInsert;
 export type ExtractedEntity = typeof extractedEntities.$inferSelect;

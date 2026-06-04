@@ -29,7 +29,9 @@ type SettingsFormRaw = {
 
 export default function SettingsPage() {
   const { data: org } = trpc.businesses.getOrg.useQuery();
+  const { data: me } = trpc.auth.me.useQuery();
   const updateOrg = trpc.businesses.updateOrg.useMutation();
+  const sendVerify = trpc.auth.sendVerificationEmail.useMutation();
 
   const { register, handleSubmit, formState: { errors, isDirty } } = useForm<SettingsFormRaw>({
     values: org
@@ -59,6 +61,37 @@ export default function SettingsPage() {
       <AppTopNav title="Settings" />
       <main className="flex-1 overflow-y-auto p-6">
         <div className="mx-auto max-w-2xl space-y-6">
+          {/* Account & email verification */}
+          <div className="rounded-2xl border border-edge bg-canvas-soft/50 p-7">
+            <h2 className="text-lg font-semibold text-ink">Account</h2>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm text-ink">{me?.email ?? "—"}</p>
+                <p className="mt-0.5 text-xs">
+                  {me?.emailVerified ? (
+                    <span className="text-emerald-400">Email verified</span>
+                  ) : (
+                    <span className="text-amber">Email not verified</span>
+                  )}
+                </p>
+              </div>
+              {me && !me.emailVerified && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => sendVerify.mutate()}
+                  disabled={sendVerify.isPending || sendVerify.isSuccess}
+                >
+                  {sendVerify.isSuccess ? "Email sent — check your inbox" : sendVerify.isPending ? "Sending…" : "Send verification email"}
+                </Button>
+              )}
+            </div>
+            {sendVerify.error && (
+              <p className="mt-3 text-sm text-red-400">{sendVerify.error.message}</p>
+            )}
+          </div>
+
           <form
             onSubmit={handleSubmit(onSubmit)}
             className="rounded-2xl border border-edge bg-canvas-soft/50 p-7 space-y-5"
