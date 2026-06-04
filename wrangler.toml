@@ -16,6 +16,11 @@ main = "worker.ts"
 directory = ".open-next/assets"
 binding = "ASSETS"
 
+# Sentry needs two env vars (NOT declared here):
+#   - SENTRY_DSN: encrypted Worker secret (already set via the CF dashboard) —
+#     consumed by worker.ts (withSentry) and the Next server/edge runtimes.
+#   - NEXT_PUBLIC_SENTRY_DSN: must be a Plaintext *build* variable in CF Workers
+#     Builds, since Next bakes NEXT_PUBLIC_* into the client bundle at build time.
 [vars]
 ENVIRONMENT = "production"
 CF_AI_GATEWAY_ID = "successio-prod"

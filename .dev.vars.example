@@ -24,3 +24,12 @@ ENCRYPTION_KEY=
 R2_ACCESS_KEY_ID=
 R2_SECRET_ACCESS_KEY=
 R2_BUCKET_NAME=successio-documents
+
+# Sentry error monitoring.
+# - SENTRY_DSN: server/edge/worker runtime DSN. In production this is a CF
+#   Worker secret (already set via dashboard); set it here for local runs.
+# - NEXT_PUBLIC_SENTRY_DSN: client DSN. Next bakes NEXT_PUBLIC_* into the
+#   browser bundle at BUILD time, so it must also be set as a Plaintext build
+#   variable in CF Workers Builds (not just a runtime secret).
+SENTRY_DSN=
+NEXT_PUBLIC_SENTRY_DSN=
