@@ -99,7 +99,7 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
   const segments = data
     ? visibleKeys.flatMap((k) => [SECTION_LABELS[k] ?? k, data.profile[k]])
     : [];
-  const t = useTranslate(segments);
+  const t = useTranslate(segments, { auto: true });
 
   if (loading) {
     return (
