@@ -8,6 +8,7 @@ import { adminRouter } from "./admin";
 import { historyRouter } from "./history";
 import { configRouter } from "./config";
 import { legacyRouter } from "./legacy";
+import { translationRouter } from "./translation";
 
 export const appRouter = router({
   auth: authRouter,
@@ -19,6 +20,7 @@ export const appRouter = router({
   history: historyRouter,
   config: configRouter,
   legacy: legacyRouter,
+  translation: translationRouter,
 });
 
 export type AppRouter = typeof appRouter;

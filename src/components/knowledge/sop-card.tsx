@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { Edit3, Check, Trash2, Plus, GripVertical, User, StickyNote } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/lib/trpc-client";
+import { useTranslate, TranslateMenu } from "@/components/shared/translate";
 
 interface SopCardProps {
   id: string;
@@ -20,6 +21,11 @@ export function SopCard({ id, title, steps, owner, source, onDeleted }: SopCardP
   const [editTitle, setEditTitle] = useState(title);
   const [editSteps, setEditSteps] = useState(steps);
   const utils = trpc.useUtils();
+
+  // On-demand translation of the title + steps as one aligned batch.
+  const t = useTranslate([title, ...steps]);
+  const shownTitle = t.lang ? t.display[0] : title;
+  const shownSteps = t.lang ? t.display.slice(1) : steps;
 
   const updateMutation = trpc.knowledge.updateSop.useMutation({
     onSuccess: () => {
@@ -70,10 +76,13 @@ export function SopCard({ id, title, steps, owner, source, onDeleted }: SopCardP
             className="input-base flex-1 text-sm font-semibold"
           />
         ) : (
-          <h4 className="text-sm font-semibold text-ink">{title}</h4>
+          <h4 className="text-sm font-semibold text-ink">{shownTitle}</h4>
         )}
 
         <div className="flex shrink-0 items-center gap-1.5">
+          {!editing && (
+            <TranslateMenu lang={t.lang} isPending={t.isPending} onChoose={t.choose} />
+          )}
           {editing ? (
             <>
               <button
@@ -124,7 +133,7 @@ export function SopCard({ id, title, steps, owner, source, onDeleted }: SopCardP
 
       {/* Steps */}
       <ol className="mt-3 space-y-2">
-        {(editing ? editSteps : steps).map((step, i) => (
+        {(editing ? editSteps : shownSteps).map((step, i) => (
           <li key={i} className="flex items-start gap-2">
             <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-amber/10 font-mono text-[10px] font-semibold text-amber">
               {i + 1}

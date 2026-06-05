@@ -18,6 +18,7 @@ export const MODELS = {
   embeddings:    "@cf/baai/bge-base-en-v1.5",                 // Workers AI native
   transcription: "@cf/openai/whisper",                         // Workers AI native
   profile_draft: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",  // CIM narrative drafting
+  translation:   "@cf/meta/llama-3.3-70b-instruct-fp8-fast",  // on-demand translation
 } as const;
 
 export type ModelKey = keyof typeof MODELS;
@@ -146,6 +147,80 @@ export class AIGateway {
       temperature: 0,
     })) as { response?: string; description?: string };
     return result.response ?? result.description ?? "";
+  }
+
+  /**
+   * Translate a batch of strings into `targetLanguage` using Llama. The source
+   * language is auto-detected; strings already in the target are returned
+   * unchanged. Output stays aligned 1:1 with the input order — we ask for a JSON
+   * array and, if the model returns the wrong shape/length, fall back to
+   * translating each string on its own so structured content (e.g. SOP steps)
+   * never gets misaligned. Empty strings are passed through without a model call.
+   */
+  async translate(opts: { texts: string[]; targetLanguage: string }): Promise<string[]> {
+    const { texts, targetLanguage } = opts;
+    const indexed = texts.map((t, i) => ({ i, t: t ?? "" }));
+    const toTranslate = indexed.filter((x) => x.t.trim().length > 0);
+    if (toTranslate.length === 0) return texts.map((t) => t ?? "");
+
+    const out = texts.map((t) => t ?? "");
+    const system =
+      `You are a professional translator. Translate every string in the input JSON array into ${targetLanguage}. ` +
+      `Preserve meaning, tone, line breaks, numbers, units, currency symbols, and proper nouns. ` +
+      `If a string is already in ${targetLanguage}, return it unchanged. Do not add notes or explanations. ` +
+      `Respond with ONLY a JSON array of strings, the same length and order as the input.`;
+
+    try {
+      const res = await this.complete({
+        model: MODELS.translation,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: JSON.stringify(toTranslate.map((x) => x.t)) },
+        ],
+        max_tokens: 4096,
+        temperature: 0.2,
+      });
+      const parsed = this.parseJsonArray(res.content);
+      if (parsed && parsed.length === toTranslate.length) {
+        toTranslate.forEach((x, k) => (out[x.i] = parsed[k]));
+        return out;
+      }
+    } catch (err) {
+      console.warn("[translate] batch failed, falling back per-item:", err);
+    }
+
+    // Fallback: translate each segment independently to guarantee alignment.
+    await Promise.all(
+      toTranslate.map(async (x) => {
+        try {
+          const res = await this.complete({
+            model: MODELS.translation,
+            messages: [
+              { role: "system", content: `Translate the user's text into ${targetLanguage}. If it is already in ${targetLanguage}, return it unchanged. Output only the translation, with no quotes or commentary.` },
+              { role: "user", content: x.t },
+            ],
+            max_tokens: 1024,
+            temperature: 0.2,
+          });
+          out[x.i] = res.content.trim() || x.t;
+        } catch {
+          out[x.i] = x.t; // last resort: keep the original
+        }
+      })
+    );
+    return out;
+  }
+
+  /** Best-effort parse of a JSON string array, tolerating code fences/prose. */
+  private parseJsonArray(raw: string): string[] | null {
+    const start = raw.indexOf("[");
+    const end = raw.lastIndexOf("]");
+    if (start === -1 || end <= start) return null;
+    try {
+      const arr = JSON.parse(raw.slice(start, end + 1));
+      if (Array.isArray(arr) && arr.every((x) => typeof x === "string")) return arr;
+    } catch { /* fall through */ }
+    return null;
   }
 
   /** Run Whisper (Workers AI native — does not go through gateway). */

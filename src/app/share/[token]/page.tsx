@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Building2, Lock, AlertTriangle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useTranslate, TranslateMenu } from "@/components/shared/translate";
 
 interface ShareData {
   tier: string;
@@ -92,6 +93,14 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
 
   const needsNda = data?.tier !== "public" && !ndaAccepted;
 
+  // On-demand translation of the profile — each section's label + body as one
+  // aligned batch, so the whole deal room reads in the viewer's language.
+  const visibleKeys = data ? SECTION_ORDER.filter((key) => key in data.profile) : [];
+  const segments = data
+    ? visibleKeys.flatMap((k) => [SECTION_LABELS[k] ?? k, data.profile[k]])
+    : [];
+  const t = useTranslate(segments);
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-canvas">
@@ -128,7 +137,12 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
               <p className="text-xs text-ink-faint capitalize">{data.org.vertical}</p>
             </div>
           </div>
-          <TierBadge tier={data.tier} />
+          <div className="flex items-center gap-2">
+            {(ndaAccepted || data.tier === "public") && visibleKeys.length > 0 && (
+              <TranslateMenu lang={t.lang} isPending={t.isPending} onChoose={t.choose} />
+            )}
+            <TierBadge tier={data.tier} />
+          </div>
         </div>
       </header>
 
@@ -206,9 +220,7 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
             transition={{ delay: 0.1 }}
             className="space-y-6"
           >
-            {SECTION_ORDER
-              .filter((key) => key in data.profile)
-              .map((key, i) => (
+            {visibleKeys.map((key, i) => (
                 <motion.section
                   key={key}
                   initial={{ opacity: 0, y: 12 }}
@@ -217,10 +229,10 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
                   className="rounded-2xl border border-edge bg-canvas-soft/30 p-6"
                 >
                   <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-amber">
-                    {SECTION_LABELS[key] ?? key}
+                    {t.lang ? t.display[i * 2] : SECTION_LABELS[key] ?? key}
                   </h2>
                   <p className="text-sm leading-relaxed text-ink-soft whitespace-pre-line">
-                    {data.profile[key]}
+                    {t.lang ? t.display[i * 2 + 1] : data.profile[key]}
                   </p>
                 </motion.section>
               ))}
