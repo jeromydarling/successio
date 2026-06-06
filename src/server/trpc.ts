@@ -32,6 +32,10 @@ export interface Context {
     CF_API_TOKEN?: string;
     EMAIL_FROM?: string;
     APP_URL?: string;
+    // E2E rig: when not "on", signup auto-verifies and skips the email step.
+    EMAIL_VERIFICATION?: string;
+    // Token guarding the test-user purge endpoint (has a known CI fallback).
+    E2E_ADMIN_TOKEN?: string;
   };
   session: SessionPayload | null;
   req: Request;

@@ -82,6 +82,12 @@ export const authRouter = router({
         associationId,
       });
 
+      // Email verification is opt-in via the EMAIL_VERIFICATION flag. When it's
+      // not "on" (the default), the account is created already-verified and the
+      // confirm step is skipped, so a new user can use the whole app at once.
+      // Re-enable verification by setting EMAIL_VERIFICATION="on" (one var).
+      const verificationOn = ctx.env.EMAIL_VERIFICATION === "on";
+
       await ctx.db.insert(users).values({
         id: userId,
         orgId,
@@ -89,6 +95,7 @@ export const authRouter = router({
         name: input.name,
         role: "owner",
         passwordHash,
+        emailVerifiedAt: verificationOn ? null : new Date(),
       });
 
       if (inviteId) {
@@ -107,13 +114,17 @@ export const authRouter = router({
       ctx.resHeaders.append("Set-Cookie", cookie);
 
       // Send an email-verification link (best-effort — don't block signup).
-      try {
-        const raw = await issueToken(ctx.db, userId, "email_verify");
-        const url = `${appUrl(ctx.env)}/verify-email?token=${raw}`;
-        const mail = verifyEmail({ name: input.name, url });
-        await getEmailSender(ctx.env).send({ to: input.email.toLowerCase(), ...mail });
-      } catch (err) {
-        console.error("[auth] signup verification email failed:", err);
+      // Skipped entirely when verification is off, since the user is already
+      // verified above and the journey must never depend on an email link.
+      if (verificationOn) {
+        try {
+          const raw = await issueToken(ctx.db, userId, "email_verify");
+          const url = `${appUrl(ctx.env)}/verify-email?token=${raw}`;
+          const mail = verifyEmail({ name: input.name, url });
+          await getEmailSender(ctx.env).send({ to: input.email.toLowerCase(), ...mail });
+        } catch (err) {
+          console.error("[auth] signup verification email failed:", err);
+        }
       }
 
       return { userId, orgId, cookie };

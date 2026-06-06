@@ -34,3 +34,8 @@ yarn-error.log*
 # env files — NEVER commit real secrets
 .env
 .env*.local
+
+# playwright e2e artifacts
+/playwright-report/
+/test-results/
+/playwright/.cache/

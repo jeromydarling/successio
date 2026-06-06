@@ -35,6 +35,13 @@ const envSchema = z.object({
   CF_AI_GATEWAY_ID: z.string().default("successio-prod"),
 
   ENVIRONMENT: z.enum(["development", "production", "test"]).default("production"),
+
+  // E2E test rig. EMAIL_VERIFICATION: when not "on", signup creates already-
+  // verified users and skips the confirm email (so a new account can use the
+  // whole app immediately). Re-enable real verification by setting it to "on".
+  EMAIL_VERIFICATION: z.string().optional(),
+  // Token guarding POST /api/admin/purge-user (test-account cleanup).
+  E2E_ADMIN_TOKEN: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

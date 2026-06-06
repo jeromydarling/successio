@@ -1,0 +1,50 @@
+name: E2E
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Base URL to test against (defaults to production)"
+        required: false
+        default: "https://successio.pro"
+
+# Don't pile up overlapping runs on rapid pushes.
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install Playwright (Chromium)
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E (desktop + mobile)
+        run: npx playwright test --project=desktop --project=mobile
+        env:
+          # workflow_dispatch input wins; otherwise test production.
+          BASE_URL: ${{ github.event.inputs.base_url || 'https://successio.pro' }}
+          # Repo secret if provided, else the known fallback the purge endpoint
+          # accepts. The endpoint can only ever delete e2e+ test accounts.
+          E2E_ADMIN_TOKEN: ${{ secrets.E2E_ADMIN_TOKEN || 'successio-e2e-purge-2026' }}
+
+      - name: Upload Playwright report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14

@@ -11,6 +11,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "preview": "opennextjs-cloudflare build && wrangler dev",
     "deploy": "opennextjs-cloudflare build && wrangler deploy"
   },
@@ -44,6 +46,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260604.1",
+    "@playwright/test": "^1.49.1",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^22.10.5",
     "@types/react": "^19.0.4",
