@@ -160,11 +160,19 @@ test("6) knowledge: add, edit, translate, and delete an SOP", async () => {
   await page.getByRole("button", { name: /previous/i }).click();
   await expect(page.getByText(/1 \/ \d/)).toBeVisible();
 
-  // Add a manual SOP (creates "New SOP").
+  // Seeded data already includes one SOP ("How we quote a new job") — SOPs are
+  // the processes table. Capture the baseline so add/delete are relative, and
+  // rely on newest-first ordering so .first() always targets the SOP we add.
+  const delBtns = page.getByRole("button", { name: "Delete SOP" });
+  await expect(page.getByText(/How we quote a new job/i).first()).toBeVisible();
+  const baseline = await delBtns.count();
+
+  // Add a manual SOP (newest first → it's the first card).
   await page.getByRole("button", { name: /add manually/i }).click();
+  await expect(delBtns).toHaveCount(baseline + 1);
   await expect(page.getByText("New SOP").first()).toBeVisible();
 
-  // Edit its title and confirm persistence.
+  // Edit the new card's title and confirm persistence.
   await page.getByRole("button", { name: "Edit SOP" }).first().click();
   await page.getByRole("textbox").first().fill("Quoting Procedure");
   await page.getByRole("button", { name: "Save SOP" }).first().click();
@@ -182,11 +190,11 @@ test("6) knowledge: add, edit, translate, and delete an SOP", async () => {
     test.info().annotations.push({ type: "best-effort", description: `SOP translate: ${String(err).slice(0, 100)}` });
   }
 
-  // Delete the SOP and confirm it's gone.
+  // Delete the SOP we added (newest → first); the seeded SOP stays (baseline).
   await page.getByRole("button", { name: "Delete SOP" }).first().click();
-  await expect(page.getByRole("button", { name: "Delete SOP" })).toHaveCount(0, { timeout: 15_000 });
+  await expect(delBtns).toHaveCount(baseline, { timeout: 15_000 });
   await page.reload();
-  await expect(page.getByRole("button", { name: "Delete SOP" })).toHaveCount(0);
+  await expect(delBtns).toHaveCount(baseline);
 });
 
 test("7) vault: seeded docs, status filter, detail slide-over, semantic search", async () => {
