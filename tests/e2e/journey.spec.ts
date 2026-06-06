@@ -100,9 +100,9 @@ test("4) settings: editing every field persists across reload", async () => {
   await expect(page.getByPlaceholder("Brenner Precision Machining")).toHaveValue(BUSINESS);
 
   await page.getByPlaceholder("Akron, Ohio").fill(LOCATION);
-  await page.getByPlaceholder("1987").fill("2001");
-  await page.getByPlaceholder("31").fill("14");
-  await page.getByPlaceholder("6240000").fill("6200000");
+  await page.getByPlaceholder("1987", { exact: true }).fill("2001");
+  await page.getByPlaceholder("31", { exact: true }).fill("14");
+  await page.getByPlaceholder("6240000", { exact: true }).fill("6200000");
   await page.getByPlaceholder(/A precision machine shop/i).fill(`E2E narrative ${TS}`);
 
   await page.getByRole("button", { name: /save changes/i }).click();
@@ -113,9 +113,9 @@ test("4) settings: editing every field persists across reload", async () => {
 
   await page.reload();
   await expect(page.getByPlaceholder("Akron, Ohio")).toHaveValue(LOCATION);
-  await expect(page.getByPlaceholder("1987")).toHaveValue("2001");
-  await expect(page.getByPlaceholder("31")).toHaveValue("14");
-  await expect(page.getByPlaceholder("6240000")).toHaveValue("6200000");
+  await expect(page.getByPlaceholder("1987", { exact: true })).toHaveValue("2001");
+  await expect(page.getByPlaceholder("31", { exact: true })).toHaveValue("14");
+  await expect(page.getByPlaceholder("6240000", { exact: true })).toHaveValue("6200000");
 });
 
 test("5) history: sparkline, add + filter, delete — all persist", async () => {
@@ -194,8 +194,9 @@ test("7) vault: seeded docs, status filter, detail slide-over, semantic search",
   await expect(page.getByRole("heading", { level: 1, name: "Document Vault" })).toBeVisible();
   await expect(page.getByText("PnL-2021-2023.pdf").first()).toBeVisible();
 
-  // Status filter (all seeded docs are complete).
-  await page.getByRole("button", { name: "complete", exact: true }).click();
+  // Status filter (all seeded docs are complete). Case-insensitive: the pill
+  // uses CSS capitalize, which Chromium folds into the accessible name.
+  await page.getByRole("button", { name: /^complete$/i }).click();
   await expect(page.getByText("Customer-List.xlsx").first()).toBeVisible();
 
   // Open the document detail slide-over.
