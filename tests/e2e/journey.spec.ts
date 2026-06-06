@@ -81,6 +81,11 @@ test("3) settings: editing business details persists across reload", async () =>
   await page.goto("/settings");
   await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
 
+  // Wait for the org to hydrate the form before editing. Otherwise we'd submit
+  // before getOrg resolves, the required name field would still be empty, and
+  // updateOrg rejects the input (400) — so nothing persists.
+  await expect(page.getByPlaceholder("Brenner Precision Machining")).toHaveValue(BUSINESS);
+
   const location = page.getByPlaceholder("Akron, Ohio");
   await expect(location).toBeVisible();
   await location.fill(LOCATION);
