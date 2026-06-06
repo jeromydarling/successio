@@ -1,16 +1,14 @@
 import { test, expect, type Page } from "@playwright/test";
 
 /**
- * THE journey: one brand-new account clicks through every screen a real user
- * can reach and performs every interaction that writes to the database. For
- * each create action we reload the page and re-assert, proving the data hit D1
- * (not just React state). Runs serially on a single shared page; the account is
- * purged in afterAll so CI runs never accumulate junk.
+ * THE deep journey: one brand-new account, seeded with a representative dataset,
+ * then driven through EVERY feature a real user can reach — with real edits,
+ * deletes, persistence-by-reload, the public deal room (teaser + NDA gate +
+ * on-demand translation), and the AI actions exercised best-effort.
  *
- * AI/long actions (profile generation, legacy book, the document pipeline) are
- * exercised best-effort — a fresh account has a readiness score of 0, so the
- * score-gated generators are intentionally not reachable. The hard persistence
- * proofs are the pure-D1 writes: settings, a milestone, and a manual SOP.
+ * Deterministic data comes from POST /api/admin/seed-user (token + e2e+ guard),
+ * so score-gated features (profile, share, PDF, legacy) are reachable without
+ * depending on the live OCR/extraction pipeline. The account is purged after.
  */
 
 test.describe.configure({ mode: "serial" });
@@ -23,22 +21,20 @@ const BUSINESS = `E2E Test Shop ${TS}`;
 const LOCATION = `E2E City ${TS}`;
 const MILESTONE = `E2E Milestone ${TS}`;
 
-const PURGE_TOKEN = process.env.E2E_ADMIN_TOKEN || "successio-e2e-purge-2026";
+const TOKEN = process.env.E2E_ADMIN_TOKEN || "successio-e2e-purge-2026";
 
 let page: Page;
+let publicToken = "";
+let ndaToken = "";
 
 test.beforeAll(async ({ browser }) => {
   page = await browser.newPage();
 });
 
 test.afterAll(async () => {
-  // Best-effort cleanup — never fail the suite on cleanup. (Until the new
-  // server code is deployed the endpoint may 404; a later run will purge.)
   try {
-    // Send via JSON body, not query — a "+" in the email would otherwise be
-    // decoded to a space by query parsing and miss the e2e+ allowlist.
     const res = await page.request.post("/api/admin/purge-user", {
-      data: { token: PURGE_TOKEN, email: EMAIL },
+      data: { token: TOKEN, email: EMAIL },
     });
     console.log(`[purge] ${res.status()} ${await res.text().catch(() => "")}`);
   } catch (err) {
@@ -59,152 +55,245 @@ test("1) marketing → signup creates a signed-in account", async () => {
   await page.getByPlaceholder("Brenner Precision Machining").fill(BUSINESS);
   await page.getByRole("combobox").selectOption("manufacturing");
   await page.getByPlaceholder("10+ characters").fill(PASSWORD);
-
   await page.getByRole("button", { name: /create account/i }).click();
 
-  // Signed in: redirected to the dashboard and the sign-out control is present.
   await expect(page).toHaveURL(/\/dashboard/, { timeout: 30_000 });
   await expect(page.getByRole("heading", { level: 1, name: "Dashboard" })).toBeVisible();
   await expect(page.getByTitle("Sign out")).toBeVisible();
 });
 
-test("2) dashboard renders the readiness score + checklist", async () => {
-  await page.goto("/dashboard");
-  await expect(page.getByRole("heading", { level: 1, name: "Dashboard" })).toBeVisible();
-  // Always present for any account. (The "Score breakdown" panel only renders
-  // once there's extracted data, so it's absent for a fresh account.)
-  await expect(page.getByText(/Sale Readiness Score/i)).toBeVisible();
-  await expect(page.getByRole("heading", { name: /readiness checklist/i })).toBeVisible();
+test("2) seed a representative business dataset", async () => {
+  const res = await page.request.post("/api/admin/seed-user", {
+    data: { token: TOKEN, email: EMAIL },
+  });
+  console.log(`[seed] ${res.status()} ${await res.text().catch(() => "")}`);
+  expect(res.ok()).toBeTruthy();
+  expect((await res.json()).seeded).toBe(true);
 });
 
-test("3) settings: editing business details persists across reload", async () => {
+test("3) dashboard reflects the seeded score, breakdown, and checklist", async () => {
+  await page.goto("/dashboard");
+  await expect(page.getByRole("heading", { level: 1, name: "Dashboard" })).toBeVisible();
+  await expect(page.getByText(/64% ready/i)).toBeVisible();
+  // The breakdown panel only renders once there's extracted data — now it does.
+  await expect(page.getByRole("heading", { name: /score breakdown/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /readiness checklist/i })).toBeVisible();
+  await expect(page.getByText("Customer list extracted").first()).toBeVisible();
+});
+
+test("4) settings: editing every field persists across reload", async () => {
   await page.goto("/settings");
   await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
-
-  // Wait for the org to hydrate the form before editing. Otherwise we'd submit
-  // before getOrg resolves, the required name field would still be empty, and
-  // updateOrg rejects the input (400) — so nothing persists.
+  // Wait for the org to hydrate the form (required name field) before editing.
   await expect(page.getByPlaceholder("Brenner Precision Machining")).toHaveValue(BUSINESS);
 
-  const location = page.getByPlaceholder("Akron, Ohio");
-  await expect(location).toBeVisible();
-  await location.fill(LOCATION);
+  await page.getByPlaceholder("Akron, Ohio").fill(LOCATION);
+  await page.getByPlaceholder("1987").fill("2001");
+  await page.getByPlaceholder("31").fill("14");
+  await page.getByPlaceholder("6240000").fill("6200000");
   await page.getByPlaceholder(/A precision machine shop/i).fill(`E2E narrative ${TS}`);
 
   await page.getByRole("button", { name: /save changes/i }).click();
-
-  // Diagnostic only (never the failure point): observe the save round-trip.
-  // The real proof is persistence after a reload, below.
   try {
-    const resp = await page.waitForResponse(
-      (r) => r.url().includes("businesses.updateOrg"),
-      { timeout: 30_000 }
-    );
-    console.log("[settings] updateOrg status", resp.status());
-  } catch {
-    console.warn("[settings] no updateOrg response observed");
-  }
+    const r = await page.waitForResponse((x) => x.url().includes("businesses.updateOrg"), { timeout: 30_000 });
+    console.log("[settings] updateOrg status", r.status());
+  } catch { console.warn("[settings] no updateOrg response observed"); }
 
-  // Reload → value came back from D1, not local form state.
   await page.reload();
   await expect(page.getByPlaceholder("Akron, Ohio")).toHaveValue(LOCATION);
+  await expect(page.getByPlaceholder("1987")).toHaveValue("2001");
+  await expect(page.getByPlaceholder("31")).toHaveValue("14");
+  await expect(page.getByPlaceholder("6240000")).toHaveValue("6200000");
 });
 
-test("4) history: adding a milestone persists across reload", async () => {
+test("5) history: sparkline, add + filter, delete — all persist", async () => {
   await page.goto("/history");
   await expect(page.getByRole("heading", { level: 1, name: "History" })).toBeVisible();
+  // Seeded financials → the revenue sparkline renders (has an aria-label).
+  await expect(page.getByRole("img", { name: /revenue growth/i })).toBeVisible();
+  // Seeded milestone is visible.
+  await expect(page.getByText("Brenner Precision founded").first()).toBeVisible();
 
+  // Add a milestone and confirm it persists.
   await page.getByRole("button", { name: /add milestone/i }).click();
   await page.getByRole("spinbutton").first().fill("1999");
   await page.getByRole("combobox").selectOption("equipment");
   await page.getByPlaceholder("Landed the Goodyear tooling contract").fill(MILESTONE);
-  await page
-    .getByPlaceholder("What happened, and why it matters to a buyer.")
-    .fill(`Bought our first 5-axis mill in 1999. ${TS}`);
-
+  await page.getByPlaceholder("What happened, and why it matters to a buyer.").fill(`Bought our first 5-axis mill. ${TS}`);
   await page.getByRole("button", { name: /add to timeline/i }).click();
   await expect(page.getByText(MILESTONE).first()).toBeVisible();
-
   await page.reload();
   await expect(page.getByText(MILESTONE).first()).toBeVisible();
+
+  // Category filter still surfaces the founding milestone.
+  await page.getByRole("button", { name: /^founding$/i }).click();
+  await expect(page.getByText("Brenner Precision founded").first()).toBeVisible();
+  await page.getByRole("button", { name: /all milestones/i }).click();
+
+  // Delete the milestone we added (scoped to its row), confirm it's gone.
+  await page.locator("li", { hasText: MILESTONE }).getByTitle("Delete milestone").click();
+  await expect(page.getByText(MILESTONE)).toHaveCount(0, { timeout: 15_000 });
+  await page.reload();
+  await expect(page.getByText(MILESTONE)).toHaveCount(0);
 });
 
-test("5) knowledge: adding a manual SOP persists across reload", async () => {
+test("6) knowledge: add, edit, translate, and delete an SOP", async () => {
   await page.goto("/knowledge");
   await expect(page.getByRole("heading", { level: 1, name: "Knowledge Capture" })).toBeVisible();
 
-  // "Add manually" creates a server-side SOP titled "New SOP".
+  // Prompted-interview navigation.
+  await expect(page.getByText(/1 \/ \d/)).toBeVisible();
+  await page.getByRole("button", { name: /next/i }).click();
+  await expect(page.getByText(/2 \/ \d/)).toBeVisible();
+  await page.getByRole("button", { name: /previous/i }).click();
+  await expect(page.getByText(/1 \/ \d/)).toBeVisible();
+
+  // Add a manual SOP (creates "New SOP").
   await page.getByRole("button", { name: /add manually/i }).click();
   await expect(page.getByText("New SOP").first()).toBeVisible();
 
+  // Edit its title and confirm persistence.
+  await page.getByRole("button", { name: "Edit SOP" }).first().click();
+  await page.getByRole("textbox").first().fill("Quoting Procedure");
+  await page.getByRole("button", { name: "Save SOP" }).first().click();
+  await expect(page.getByText("Quoting Procedure").first()).toBeVisible();
   await page.reload();
-  await expect(page.getByText("New SOP").first()).toBeVisible();
+  await expect(page.getByText("Quoting Procedure").first()).toBeVisible();
+
+  // Translate the SOP into Spanish (Llama) — assert the control engages.
+  try {
+    await page.getByRole("button", { name: /translate/i }).first().click();
+    await page.getByText("Español").click();
+    await expect(page.getByRole("button", { name: "Español" }).first()).toBeVisible({ timeout: 30_000 });
+    console.log("[knowledge] SOP translated to Español");
+  } catch (err) {
+    test.info().annotations.push({ type: "best-effort", description: `SOP translate: ${String(err).slice(0, 100)}` });
+  }
+
+  // Delete the SOP and confirm it's gone.
+  await page.getByRole("button", { name: "Delete SOP" }).first().click();
+  await expect(page.getByRole("button", { name: "Delete SOP" })).toHaveCount(0, { timeout: 15_000 });
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Delete SOP" })).toHaveCount(0);
 });
 
-test("6) vault renders search + status filters", async () => {
+test("7) vault: seeded docs, status filter, detail slide-over, semantic search", async () => {
   await page.goto("/vault");
   await expect(page.getByRole("heading", { level: 1, name: "Document Vault" })).toBeVisible();
-  await expect(page.getByPlaceholder(/Search documents/i)).toBeVisible();
-  // "All" must be exact so it doesn't match other status pills.
-  await page.getByRole("button", { name: "All", exact: true }).click();
+  await expect(page.getByText("PnL-2021-2023.pdf").first()).toBeVisible();
+
+  // Status filter (all seeded docs are complete).
+  await page.getByRole("button", { name: "complete", exact: true }).click();
+  await expect(page.getByText("Customer-List.xlsx").first()).toBeVisible();
+
+  // Open the document detail slide-over.
+  await page.getByText("PnL-2021-2023.pdf").first().click();
+  await expect(page.getByText("Document Detail")).toBeVisible();
+  await expect(page.getByText("Extracted Entities")).toBeVisible();
+  await expect(page.getByText(/Raw OCR Text/i)).toBeVisible();
+
+  // Semantic search shows the "by meaning" indicator at 3+ chars.
+  await page.goto("/vault");
+  await page.getByPlaceholder(/Search documents/i).fill("revenue");
+  await expect(page.getByText(/searching by meaning/i)).toBeVisible();
 });
 
-test("7) upload page renders; file upload is best-effort", async () => {
-  await page.goto("/upload");
-  await expect(page.getByRole("heading", { level: 1, name: "Upload Documents" })).toBeVisible();
-  await expect(page.getByText(/Drag files here/i)).toBeVisible();
+test("8) deal room: preview, share tiers, PDF, regenerate", async () => {
+  await page.goto("/profile");
+  await expect(page.getByRole("heading", { level: 1, name: "Deal Room" })).toBeVisible();
+  await expect(page.getByText("Profile generated")).toBeVisible();
 
-  // Best-effort real upload: the document row + R2 write should persist even if
-  // the async OCR/extract pipeline doesn't finish during the test. Never fail
-  // the journey if the storage stack isn't reachable from CI.
-  const fileName = `e2e-upload-${TS}.txt`;
+  // Expand a preview section (accordion) and read seeded content.
+  await page.getByRole("button", { name: /financial highlights/i }).click();
+  await expect(page.getByText(/Revenue grew from/i)).toBeVisible();
+
+  // Create a public (teaser) share link and capture its token.
+  await page.getByRole("button", { name: /create link/i }).click();
+  const code = page.locator("code", { hasText: "/share/" });
+  await expect(code).toBeVisible({ timeout: 15_000 });
+  publicToken = (await code.textContent())!.split("/share/")[1].trim();
+  expect(publicToken.length).toBeGreaterThan(8);
+
+  // Switch to the NDA tier and create that link too.
+  await page.getByText("NDA-gated").click();
+  await page.getByRole("button", { name: /create link/i }).click();
+  const ndaCode = page.locator("code", { hasText: "/share/" });
+  await expect(ndaCode).toBeVisible({ timeout: 15_000 });
+  ndaToken = (await ndaCode.textContent())!.split("/share/")[1].trim();
+  expect(ndaToken).not.toBe(publicToken);
+  console.log(`[deal-room] public=${publicToken} nda=${ndaToken}`);
+
+  // Persistence: the links survive a reload.
+  await page.reload();
+  await expect(page.locator("code", { hasText: "/share/" })).toBeVisible();
+
+  // PDF export (deterministic renderer) — best-effort.
   try {
-    const input = page.locator('input[type="file"]');
-    if ((await input.count()) > 0) {
-      await input.setInputFiles({
-        name: fileName,
-        mimeType: "text/plain",
-        buffer: Buffer.from(`Successio E2E upload fixture ${TS}\nCustomer,Revenue\nAcme,120000\n`),
-      });
-      await expect(page.getByText(fileName).first()).toBeVisible({ timeout: 30_000 });
-
-      // If it uploaded, it should show up in the vault after a reload.
-      await page.goto("/vault");
-      await page.reload();
-      await expect(page.getByText(fileName).first()).toBeVisible({ timeout: 15_000 });
-      console.log("[upload] document persisted to vault");
-    } else {
-      test.info().annotations.push({ type: "skip", description: "no file input on upload page" });
-    }
+    await page.getByRole("button", { name: /^PDF$/ }).click();
+    const r = await page.waitForResponse((x) => x.url().includes("profiles.exportPdf"), { timeout: 30_000 });
+    console.log("[deal-room] exportPdf status", r.status());
   } catch (err) {
-    test.info().annotations.push({
-      type: "best-effort",
-      description: `upload not verified end-to-end: ${String(err).slice(0, 120)}`,
-    });
-    console.warn("[upload] best-effort step did not complete:", err);
+    test.info().annotations.push({ type: "best-effort", description: `PDF: ${String(err).slice(0, 100)}` });
+  }
+
+  // Regenerate via the live model — best-effort (the seeded profile stands in).
+  try {
+    await page.getByRole("button", { name: /regenerate profile/i }).click();
+    const r = await page.waitForResponse((x) => x.url().includes("profiles.generate"), { timeout: 60_000 });
+    console.log("[deal-room] generate status", r.status());
+  } catch (err) {
+    test.info().annotations.push({ type: "best-effort", description: `generate: ${String(err).slice(0, 100)}` });
   }
 });
 
-test("8) deal room renders with score-gated profile generation", async () => {
-  await page.goto("/profile");
-  await expect(page.getByRole("heading", { level: 1, name: "Deal Room" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: /share access tiers/i })).toBeVisible();
+test("9) public deal room: teaser, NDA gate, on-demand translation", async ({ browser }) => {
+  expect(publicToken, "public token from step 8").not.toBe("");
+  const ctx = await browser.newContext();
+  const share = await ctx.newPage();
 
-  // A fresh account (score 0) should see the gate, not be able to generate.
-  await expect(page.getByText(/reach a score of 30/i)).toBeVisible();
+  // Teaser (public) tier — only the non-confidential sections.
+  await share.goto(`/share/${publicToken}`);
+  await expect(share.getByText(/precision machine shop/i)).toBeVisible({ timeout: 15_000 });
+
+  // On-demand translation of the deal room (Llama) — best-effort.
+  try {
+    await share.getByRole("button", { name: /translate/i }).click();
+    await share.getByText("Español").click();
+    await expect(share.getByRole("button", { name: "Español" })).toBeVisible({ timeout: 30_000 });
+    console.log("[share] deal room translated to Español");
+  } catch (err) {
+    test.info().annotations.push({ type: "best-effort", description: `share translate: ${String(err).slice(0, 100)}` });
+  }
+
+  // NDA tier — confidential financials only flow after name + email are given.
+  await share.goto(`/share/${ndaToken}`);
+  await expect(share.getByText(/Confidential Information/i)).toBeVisible({ timeout: 15_000 });
+  await share.getByPlaceholder("Full name").fill("Jane Buyer");
+  await share.getByPlaceholder("Email address").fill("jane@example.com");
+  await share.getByRole("button", { name: /i agree/i }).click();
+  await expect(share.getByText(/Revenue grew from/i)).toBeVisible({ timeout: 15_000 });
+
+  await ctx.close();
 });
 
-test("9) legacy book page renders its compose entry point", async () => {
+test("10) legacy book: compose from records (AI, best-effort)", async () => {
   await page.goto("/legacy");
   await expect(page.getByRole("heading", { level: 1, name: "Legacy Book" })).toBeVisible();
   await expect(page.getByText("The story of your business")).toBeVisible();
-  await expect(page.getByRole("button", { name: /compose the book/i })).toBeVisible();
+  try {
+    await page.getByRole("button", { name: /compose the book/i }).click();
+    await expect(
+      page.getByRole("button", { name: /recompose/i }).or(page.getByText(/Chapter 1|By the numbers/i))
+    ).toBeVisible({ timeout: 90_000 });
+    console.log("[legacy] book composed");
+  } catch (err) {
+    test.info().annotations.push({ type: "best-effort", description: `legacy compose: ${String(err).slice(0, 120)}` });
+  }
 });
 
-test("10) session survives a cold reload, then sign out works", async () => {
+test("11) session survives a cold reload, then sign out works", async () => {
   await page.goto("/dashboard");
   await page.reload();
-  // Still authenticated after a full reload (cookie-backed session).
   await expect(page.getByTitle("Sign out")).toBeVisible();
 
   await page.getByTitle("Sign out").click();

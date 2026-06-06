@@ -88,6 +88,7 @@ export function SopCard({ id, title, steps, owner, source, onDeleted }: SopCardP
               <button
                 onClick={save}
                 disabled={updateMutation.isPending}
+                aria-label="Save SOP"
                 className="rounded-lg p-1.5 text-emerald-400 hover:bg-emerald-500/10"
               >
                 <Check className="size-4" />
@@ -103,6 +104,7 @@ export function SopCard({ id, title, steps, owner, source, onDeleted }: SopCardP
             <>
               <button
                 onClick={() => setEditing(true)}
+                aria-label="Edit SOP"
                 className="rounded-lg p-1.5 text-ink-faint hover:bg-white/5 hover:text-ink"
               >
                 <Edit3 className="size-4" />
@@ -110,6 +112,7 @@ export function SopCard({ id, title, steps, owner, source, onDeleted }: SopCardP
               <button
                 onClick={() => deleteMutation.mutate({ id })}
                 disabled={deleteMutation.isPending}
+                aria-label="Delete SOP"
                 className="rounded-lg p-1.5 text-ink-faint hover:bg-red-500/10 hover:text-red-400"
               >
                 <Trash2 className="size-4" />
