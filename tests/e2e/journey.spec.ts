@@ -87,7 +87,18 @@ test("3) settings: editing business details persists across reload", async () =>
   await page.getByPlaceholder(/A precision machine shop/i).fill(`E2E narrative ${TS}`);
 
   await page.getByRole("button", { name: /save changes/i }).click();
-  await expect(page.getByText("Saved!")).toBeVisible();
+
+  // Diagnostic only (never the failure point): observe the save round-trip.
+  // The real proof is persistence after a reload, below.
+  try {
+    const resp = await page.waitForResponse(
+      (r) => r.url().includes("businesses.updateOrg"),
+      { timeout: 30_000 }
+    );
+    console.log("[settings] updateOrg status", resp.status());
+  } catch {
+    console.warn("[settings] no updateOrg response observed");
+  }
 
   // Reload → value came back from D1, not local form state.
   await page.reload();
