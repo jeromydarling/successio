@@ -35,9 +35,11 @@ test.afterAll(async () => {
   // Best-effort cleanup — never fail the suite on cleanup. (Until the new
   // server code is deployed the endpoint may 404; a later run will purge.)
   try {
-    const res = await page.request.post(
-      `/api/admin/purge-user?token=${encodeURIComponent(PURGE_TOKEN)}&email=${encodeURIComponent(EMAIL)}`
-    );
+    // Send via JSON body, not query — a "+" in the email would otherwise be
+    // decoded to a space by query parsing and miss the e2e+ allowlist.
+    const res = await page.request.post("/api/admin/purge-user", {
+      data: { token: PURGE_TOKEN, email: EMAIL },
+    });
     console.log(`[purge] ${res.status()} ${await res.text().catch(() => "")}`);
   } catch (err) {
     console.warn("[purge] failed:", err);
@@ -69,7 +71,9 @@ test("1) marketing → signup creates a signed-in account", async () => {
 test("2) dashboard renders the readiness score + checklist", async () => {
   await page.goto("/dashboard");
   await expect(page.getByRole("heading", { level: 1, name: "Dashboard" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: /score breakdown/i })).toBeVisible();
+  // Always present for any account. (The "Score breakdown" panel only renders
+  // once there's extracted data, so it's absent for a fresh account.)
+  await expect(page.getByText(/Sale Readiness Score/i)).toBeVisible();
   await expect(page.getByRole("heading", { name: /readiness checklist/i })).toBeVisible();
 });
 

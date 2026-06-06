@@ -40,9 +40,22 @@ export async function POST(req: Request): Promise<Response> {
   }
   const e = env as unknown as { DB: D1Database; E2E_ADMIN_TOKEN?: string };
 
+  // Accept credentials from the query string or a JSON body. The body is
+  // preferred by callers because a "+" in an email survives there intact (query
+  // parsing would turn it into a space and miss the e2e+ allowlist).
   const url = new URL(req.url);
-  const token = url.searchParams.get("token") ?? "";
-  const email = (url.searchParams.get("email") ?? "").toLowerCase();
+  let token = url.searchParams.get("token") ?? "";
+  let email = url.searchParams.get("email") ?? "";
+  if (!token || !email) {
+    try {
+      const body = (await req.json()) as { token?: string; email?: string };
+      token = token || body.token || "";
+      email = email || body.email || "";
+    } catch {
+      /* no/invalid JSON body — fall through with whatever the query gave us */
+    }
+  }
+  email = email.toLowerCase();
 
   const expected = e.E2E_ADMIN_TOKEN || FALLBACK_TOKEN;
   if (!token || !timingSafeEqual(token, expected)) {
