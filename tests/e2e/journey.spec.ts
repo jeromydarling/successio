@@ -63,12 +63,24 @@ test("1) marketing → signup creates a signed-in account", async () => {
 });
 
 test("2) seed a representative business dataset", async () => {
-  const res = await page.request.post("/api/admin/seed-user", {
-    data: { token: TOKEN, email: EMAIL },
-  });
-  console.log(`[seed] ${res.status()} ${await res.text().catch(() => "")}`);
-  expect(res.ok()).toBeTruthy();
-  expect((await res.json()).seeded).toBe(true);
+  // Retry until the endpoint is live: on a fresh push the E2E run can start
+  // before the new code finishes deploying, so the route may 404 briefly.
+  let body: { seeded?: boolean } = {};
+  await expect
+    .poll(
+      async () => {
+        const res = await page.request.post("/api/admin/seed-user", {
+          data: { token: TOKEN, email: EMAIL },
+        });
+        body = (await res.json().catch(() => ({}))) as { seeded?: boolean };
+        if (!res.ok()) console.log(`[seed] not ready: ${res.status()}`);
+        return res.status();
+      },
+      { timeout: 150_000, intervals: [3000, 5000, 8000, 10000] }
+    )
+    .toBe(200);
+  expect(body.seeded).toBe(true);
+  console.log("[seed] ok");
 });
 
 test("3) dashboard reflects the seeded score, breakdown, and checklist", async () => {
