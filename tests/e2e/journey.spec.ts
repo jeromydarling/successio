@@ -272,9 +272,12 @@ test("9) public deal room: teaser, NDA gate, on-demand translation", async ({ br
   const ctx = await browser.newContext();
   const share = await ctx.newPage();
 
-  // Teaser (public) tier — only the non-confidential sections.
+  // Teaser (public) tier — assert on the section structure, not body text,
+  // since step 8's "Regenerate" may have rewritten the content via the model.
   await share.goto(`/share/${publicToken}`);
-  await expect(share.getByText(/precision machine shop/i)).toBeVisible({ timeout: 15_000 });
+  await expect(share.getByRole("heading", { name: /executive summary/i })).toBeVisible({ timeout: 15_000 });
+  // Confidential sections must NOT be in the teaser.
+  await expect(share.getByRole("heading", { name: /financial highlights/i })).toHaveCount(0);
 
   // On-demand translation of the deal room (Llama) — best-effort.
   try {
@@ -292,7 +295,8 @@ test("9) public deal room: teaser, NDA gate, on-demand translation", async ({ br
   await share.getByPlaceholder("Full name").fill("Jane Buyer");
   await share.getByPlaceholder("Email address").fill("jane@example.com");
   await share.getByRole("button", { name: /i agree/i }).click();
-  await expect(share.getByText(/Revenue grew from/i)).toBeVisible({ timeout: 15_000 });
+  // The confidential Financial Highlights section is released only after the gate.
+  await expect(share.getByRole("heading", { name: /financial highlights/i })).toBeVisible({ timeout: 15_000 });
 
   await ctx.close();
 });
