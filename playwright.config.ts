@@ -19,7 +19,10 @@ export default defineConfig({
   reporter: process.env.CI
     ? [["github"], ["html", { open: "never" }]]
     : [["list"], ["html", { open: "never" }]],
-  timeout: 60_000,
+  // Headroom for the best-effort AI steps (profile generate, legacy compose):
+  // their inner waits can run ~90s, and a test-level timeout isn't catchable,
+  // so it must exceed those waits.
+  timeout: 120_000,
   expect: { timeout: 15_000 },
   use: {
     baseURL: BASE_URL,
