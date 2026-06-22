@@ -7,11 +7,13 @@ import { test, expect, type Page } from "@playwright/test";
  * the document row is created and PERSISTS in the vault across a reload (proves
  * requestUpload + R2 put + confirmUpload + D1 — no AI involved).
  *
- * Observed part: we then poll the status pill, logging every transition, to see
- * how far the live OCR/extraction pipeline gets in prod. For now this is
- * non-fatal on a stuck "queued" (we're learning whether prod completes) but
- * fatal on an explicit "failed". Once we've seen it reach a terminal processed
- * state, we tighten the assertion to require it.
+ * Observed part: we then poll the status pill briefly, logging transitions, to
+ * report how far the live pipeline gets. As of this writing the document stays
+ * "queued" in prod — the async OCR/extraction pipeline (queue consumer →
+ * workflow) isn't processing there, so "complete" is not reachable. This step
+ * therefore hard-verifies the upload + persistence and reports the pipeline
+ * status (non-fatal on "queued", fatal on "failed"); if the pipeline is brought
+ * online it will be caught reaching a terminal processed state.
  */
 
 test.describe.configure({ mode: "serial" });
@@ -56,7 +58,7 @@ test("sign up a fresh account", async () => {
 });
 
 test("upload a document: persists (hard) + pipeline status (observed)", async () => {
-  test.setTimeout(240_000);
+  test.setTimeout(120_000);
 
   await page.goto("/upload");
   await expect(page.getByRole("heading", { level: 1, name: "Upload Documents" })).toBeVisible();
@@ -81,16 +83,18 @@ test("upload a document: persists (hard) + pipeline status (observed)", async ()
   await page.reload();
   await expect(page.getByText(FILE).first()).toBeVisible({ timeout: 15_000 });
 
-  // OBSERVE: poll the status pill until terminal, logging transitions.
+  // OBSERVE: poll the status pill briefly, logging transitions. (Prod currently
+  // leaves it "queued"; if the pipeline is brought online we'll see it advance.)
   const card = page.locator("article", { hasText: FILE }).first();
   let last = "";
-  const deadline = Date.now() + 180_000;
+  const start = Date.now();
+  const deadline = start + 45_000;
   while (Date.now() < deadline) {
     const txt = (await card.innerText().catch(() => "")) || "";
     const m = txt.match(/complete|needs[ _]?review|failed|embedding|extracting|ocr|queued/i);
     const status = m ? m[0].toLowerCase().replace(/_/g, " ") : "(unknown)";
     if (status !== last) {
-      console.log(`[upload-pipeline] status=${status} (+${Math.round((Date.now() - (deadline - 180_000)) / 1000)}s)`);
+      console.log(`[upload-pipeline] status=${status} (+${Math.round((Date.now() - start) / 1000)}s)`);
       last = status;
     }
     if (TERMINAL.test(status)) break;
@@ -98,8 +102,9 @@ test("upload a document: persists (hard) + pipeline status (observed)", async ()
     await page.reload();
   }
   console.log(`[upload-pipeline] FINAL status=${last}`);
+  test.info().annotations.push({ type: "upload-pipeline", description: `final status: ${last}` });
 
-  // The document must still be there, and must not have failed.
+  // Hard: the document persists and is in a valid (non-failed) state.
   await expect(page.getByText(FILE).first()).toBeVisible();
   expect(last, "pipeline ended in a failed state").not.toMatch(/failed/);
 });
