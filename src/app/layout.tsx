@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
+import Script from "next/script";
 import { Providers } from "@/components/providers";
 import "./globals.css";
 
@@ -33,6 +34,16 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
+      <head>
+        {/* Google Analytics 4 — federated CROS Family stream */}
+        <Script
+          src="https://www.googletagmanager.com/gtag/js?id=G-RKF41M29QE"
+          strategy="afterInteractive"
+        />
+        <Script id="ga4-init" strategy="afterInteractive">
+          {`window.dataLayer = window.dataLayer || [];function gtag(){dataLayer.push(arguments);}gtag('js', new Date());gtag('config', 'G-RKF41M29QE', { cros_app: 'successio' });`}
+        </Script>
+      </head>
       <body className="antialiased">
         <Providers>{children}</Providers>
       </body>
