@@ -42,6 +42,8 @@ const envSchema = z.object({
   EMAIL_VERIFICATION: z.string().optional(),
   // Token guarding POST /api/admin/purge-user (test-account cleanup).
   E2E_ADMIN_TOKEN: z.string().optional(),
+  // Token protecting the /superadmin CRM. Set via wrangler secret put SUPER_ADMIN_TOKEN.
+  SUPER_ADMIN_TOKEN: z.string().min(32).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

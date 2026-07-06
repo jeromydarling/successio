@@ -4,6 +4,7 @@ import { verifySession, getTokenFromCookie, isSessionRevoked } from "@/lib/auth"
 import type { SessionPayload } from "@/lib/auth";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import type * as schema from "@/db/schema";
+import { timingSafeEqual } from "@/lib/timing-safe-equal";
 
 export interface Context {
   db: DrizzleD1Database<typeof schema>;
@@ -36,6 +37,8 @@ export interface Context {
     EMAIL_VERIFICATION?: string;
     // Token guarding the test-user purge endpoint (has a known CI fallback).
     E2E_ADMIN_TOKEN?: string;
+    // Token protecting the /superadmin CRM area.
+    SUPER_ADMIN_TOKEN?: string;
   };
   session: SessionPayload | null;
   req: Request;
@@ -54,6 +57,21 @@ export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
     throw new TRPCError({ code: "UNAUTHORIZED", message: "Not signed in" });
   }
   return next({ ctx: { ...ctx, session: ctx.session } });
+});
+
+/** Throws 401 unless a valid sa_token cookie matches SUPER_ADMIN_TOKEN. */
+export const superAdminProcedure = t.procedure.use(async ({ ctx, next }) => {
+  const cookie = ctx.req.headers.get("cookie") ?? "";
+  const token = cookie
+    .split(";")
+    .find((c) => c.trim().startsWith("sa_token="))
+    ?.split("=")[1]
+    ?.trim();
+  const expected = ctx.env.SUPER_ADMIN_TOKEN;
+  if (!expected || !token || !timingSafeEqual(token, expected)) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "Super admin access required" });
+  }
+  return next({ ctx });
 });
 
 /** Creates a Context from a raw Request + bound env. */

@@ -12,12 +12,7 @@ export const E2E_FALLBACK_TOKEN = "successio-e2e-purge-2026";
 /** Only test accounts (e2e+...) are ever eligible. */
 const E2E_EMAIL = /^e2e\+/i;
 
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
+import { timingSafeEqual } from "@/lib/timing-safe-equal";
 
 /** Read token + email from the query string or a JSON body (body preferred — a
  *  "+" in an email survives there, where query parsing would make it a space). */

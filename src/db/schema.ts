@@ -21,12 +21,17 @@ export const organizations = sqliteTable(
     name: text("name").notNull(),
     vertical: text("vertical").notNull(), // manufacturing | hvac | plumbing | electrical | construction | trucking | agriculture
     location: text("location"),
+    // Geocoded coordinates — populated lazily by the admin map view via Nominatim.
+    lat: real("lat"),
+    lng: real("lng"),
     founded: integer("founded"),
     employeeCount: integer("employee_count"),
     annualRevenue: real("annual_revenue"),
     description: text("description"),
     // Multi-tenant: which association this member business belongs to (if any).
     associationId: text("association_id"),
+    // Churn prevention: timestamp of last re-engagement email so we don't spam.
+    churnEmailSentAt: integer("churn_email_sent_at", { mode: "timestamp" }),
     ...timestamps,
   },
   (t) => [index("orgs_assoc_idx").on(t.associationId)]
@@ -412,6 +417,22 @@ export const orgMilestones = sqliteTable(
   ]
 );
 
+// ─── Super Admin CRM ─────────────────────────────────────────────────────────
+
+export const adminNotes = sqliteTable(
+  "admin_notes",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    content: text("content").notNull(),
+    author: text("author").notNull(),
+    ...timestamps,
+  },
+  (t) => [index("admin_notes_org_idx").on(t.orgId)]
+);
+
 // ─── Re-exports for convenience ───────────────────────────────────────────────
 
 export type Organization = typeof organizations.$inferSelect;
@@ -427,3 +448,4 @@ export type ShareToken = typeof shareTokens.$inferSelect;
 export type OrgMilestone = typeof orgMilestones.$inferSelect;
 export type Association = typeof associations.$inferSelect;
 export type AssociationInvite = typeof associationInvites.$inferSelect;
+export type AdminNote = typeof adminNotes.$inferSelect;

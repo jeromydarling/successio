@@ -39,13 +39,16 @@
     "postal-mime": "^2.7.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "leaflet": "^1.9.4",
     "react-dropzone": "^15.0.0",
     "react-hook-form": "^7.76.1",
+    "react-leaflet": "^5.0.0",
     "tailwind-merge": "^2.6.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260604.1",
+    "@types/leaflet": "^1.9.14",
     "@playwright/test": "^1.49.1",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^22.10.5",

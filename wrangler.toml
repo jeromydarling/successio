@@ -83,6 +83,10 @@ name = "document-pipeline"
 binding = "DOCUMENT_WORKFLOW"
 class_name = "DocumentPipeline"
 
+# Churn prevention cron — fires daily at 08:00 UTC.
+[triggers]
+crons = ["0 8 * * *"]
+
 # Durable Object migration — required for the runtime to register the DO classes
 # on first deploy. Both DOs are in-memory (no SQL storage) but use the modern
 # SQLite-backed class declaration.

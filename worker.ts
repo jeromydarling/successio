@@ -22,6 +22,7 @@ import openNextHandler from "./.open-next/worker.js";
 
 import ingestConsumer from "./src/server/workers/ingest";
 import { handleEmail, type EmailMessage, type EmailEnv } from "./src/server/workers/email-ingest";
+import { runChurnCron, type ChurnEnv } from "./src/server/workers/churn-cron";
 
 // Durable Objects and Workflows must be exported by name so the runtime can
 // instantiate the classes referenced in wrangler.toml.
@@ -31,7 +32,14 @@ export { DocumentPipeline } from "./src/workflows/document-pipeline";
 // The worker receives one runtime env; the queue/email handlers narrow it to
 // their own shapes (IngestEnv / EmailEnv). SENTRY_DSN is the secret read by
 // withSentry's options callback.
-type WorkerEnv = { SENTRY_DSN?: string; ENVIRONMENT?: string };
+type WorkerEnv = {
+  SENTRY_DSN?: string;
+  ENVIRONMENT?: string;
+  DB?: D1Database;
+  EMAIL?: { send: (m: unknown) => Promise<{ messageId?: string }> };
+  EMAIL_FROM?: string;
+  APP_URL?: string;
+};
 
 const handler = openNextHandler as {
   fetch: (req: Request, env: unknown, ctx: ExecutionContext) => Promise<Response>;
@@ -56,6 +64,11 @@ const composedHandler: ExportedHandler<WorkerEnv> = {
   // Email Worker — forward documents to the ingest pipeline.
   async email(message, env, _ctx): Promise<void> {
     await handleEmail(message as unknown as EmailMessage, env as unknown as EmailEnv);
+  },
+
+  // Churn prevention cron — runs on the schedule in wrangler.toml [triggers].
+  async scheduled(_event: ScheduledController, env: WorkerEnv, ctx: ExecutionContext): Promise<void> {
+    await runChurnCron(env as ChurnEnv, ctx);
   },
 };
 

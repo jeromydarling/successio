@@ -7,13 +7,11 @@ import { test, expect, type Page } from "@playwright/test";
  * the document row is created and PERSISTS in the vault across a reload (proves
  * requestUpload + R2 put + confirmUpload + D1 — no AI involved).
  *
- * Observed part: we then poll the status pill briefly, logging transitions, to
- * report how far the live pipeline gets. As of this writing the document stays
- * "queued" in prod — the async OCR/extraction pipeline (queue consumer →
- * workflow) isn't processing there, so "complete" is not reachable. This step
- * therefore hard-verifies the upload + persistence and reports the pipeline
- * status (non-fatal on "queued", fatal on "failed"); if the pipeline is brought
- * online it will be caught reaching a terminal processed state.
+ * Observed part: we then poll for up to 3 minutes logging every status
+ * transition. If the pipeline is healthy the document will reach "complete" or
+ * "needs_review". If it stays "queued" the queue consumer is not draining
+ * (check Cloudflare dashboard → Queues → document-jobs). Non-fatal on
+ * "queued"; fatal on "failed".
  */
 
 test.describe.configure({ mode: "serial" });
@@ -58,7 +56,7 @@ test("sign up a fresh account", async () => {
 });
 
 test("upload a document: persists (hard) + pipeline status (observed)", async () => {
-  test.setTimeout(120_000);
+  test.setTimeout(240_000);
 
   await page.goto("/upload");
   await expect(page.getByRole("heading", { level: 1, name: "Upload Documents" })).toBeVisible();
@@ -88,7 +86,7 @@ test("upload a document: persists (hard) + pipeline status (observed)", async ()
   const card = page.locator("article", { hasText: FILE }).first();
   let last = "";
   const start = Date.now();
-  const deadline = start + 45_000;
+  const deadline = start + 180_000;
   while (Date.now() < deadline) {
     const txt = (await card.innerText().catch(() => "")) || "";
     const m = txt.match(/complete|needs[ _]?review|failed|embedding|extracting|ocr|queued/i);
