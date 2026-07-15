@@ -607,11 +607,15 @@ Always fetch live docs before implementing integrations (do not rely on training
 > **This section is the canonical home for all API keys and secrets — keep it at the very end of this file.**
 > **NEVER paste real secret values here.** This table is the *registry* (what exists, where it lives, who issues it). Real values live only in `.dev.vars` (local, gitignored) and Cloudflare encrypted secrets (production via `wrangler secret put <NAME>`). The app must fail loudly if any required key is missing — never hardcode a fallback.
 
-> **Current AI reality (vs. the model table above):** all inference runs on
-> Workers AI (Llama for extraction/vision, Whisper for audio, bge embeddings)
-> via `src/lib/ai-gateway.ts`. Scanned-PDF OCR uses Browser Rendering
-> (rasterize → vision). The external-provider keys below activate the
-> Claude/Mistral/Gemini routing described earlier — none are wired in yet.
+> **Current AI reality (vs. the model table above):** by default all inference
+> runs on Workers AI (Llama for extraction/vision, Whisper for audio, bge
+> embeddings) via `src/lib/ai-gateway.ts`, and scanned-PDF OCR uses Browser
+> Rendering (rasterize → vision). The external stack is fully wired and
+> **key-gated**: add a provider key as a GitHub repo secret and the next
+> deploy activates it — `ANTHROPIC_API_KEY` switches extraction + profile
+> drafting to Claude, `GOOGLE_AI_API_KEY` switches the extraction fallback to
+> Gemini 2.5 Flash, `MISTRAL_API_KEY` makes Mistral Document AI the primary
+> scanned-PDF OCR. See `modelsFor()` in `src/lib/ai-gateway.ts`.
 
 | Key | Purpose | Where set (local → prod) | Issuer / Console | Status |
 |---|---|---|---|---|
