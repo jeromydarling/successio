@@ -25,11 +25,31 @@ jobs:
           node-version: "22"
           cache: "npm"
       - run: npm ci
+      - run: npm run typecheck
       - run: npm run test
+      # Integration tests: queue consumer + score engine against real D1
+      # inside workerd (Miniflare) — hermetic, no cloud resources touched.
+      - run: npm run test:integration
       # Create the Vectorize index the Worker binds to (idempotent — tolerates
       # "already exists"). Requires the token's Vectorize:Edit permission.
       - name: Ensure Vectorize index
         run: npx wrangler vectorize create successio-docs --dimensions=768 --metric=cosine || true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: f84f7181c051be0040e972dcad48e697
+      # Create the document-jobs queue if it doesn't exist. The Worker consumer
+      # binding references this queue name — it must exist before wrangler deploy.
+      - name: Ensure document-jobs queues
+        run: |
+          npx wrangler queues create document-jobs || true
+          npx wrangler queues create document-jobs-dlq || true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: f84f7181c051be0040e972dcad48e697
+      # Apply any pending D1 schema migrations before the new Worker code goes
+      # live. Running before deploy ensures the schema is ready when code runs.
+      - name: Apply D1 migrations
+        run: npx wrangler d1 migrations apply successio-prod --remote
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: f84f7181c051be0040e972dcad48e697
@@ -38,15 +58,32 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: f84f7181c051be0040e972dcad48e697
       # Push runtime secrets onto the deployed Worker (idempotent — re-sets the
-      # same value each run). Sessions are signed/verified with JWT_SECRET.
-      - name: Sync JWT_SECRET
-        run: printf '%s' "${{ secrets.JWT_SECRET }}" | npx wrangler secret put JWT_SECRET
+      # same value each run). Add the matching secret to:
+      #   GitHub → repo Settings → Secrets and variables → Actions
+      - name: Sync required secrets
+        run: |
+          printf '%s' "$JWT_SECRET" | npx wrangler secret put JWT_SECRET
+          if [ -n "$SUPER_ADMIN_TOKEN" ]; then
+            printf '%s' "$SUPER_ADMIN_TOKEN" | npx wrangler secret put SUPER_ADMIN_TOKEN
+          else
+            echo "::warning::SUPER_ADMIN_TOKEN repo secret not set — /superadmin stays locked until it is"
+          fi
+          if [ -n "$E2E_ADMIN_TOKEN" ]; then
+            printf '%s' "$E2E_ADMIN_TOKEN" | npx wrangler secret put E2E_ADMIN_TOKEN
+          else
+            echo "::warning::E2E_ADMIN_TOKEN repo secret not set — E2E seed/purge endpoints stay disabled"
+          fi
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: f84f7181c051be0040e972dcad48e697
-      # Cloud-connector public client IDs/keys — only synced if the repo secret
-      # is set (each connector lights up once its key is present).
-      - name: Sync connector keys
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          SUPER_ADMIN_TOKEN: ${{ secrets.SUPER_ADMIN_TOKEN }}
+          E2E_ADMIN_TOKEN: ${{ secrets.E2E_ADMIN_TOKEN }}
+      # Optional keys — only synced if the repo secret is set. Connectors and
+      # external AI providers each light up automatically once their key lands
+      # (modelsFor() upgrades extraction/profile routing; Mistral OCR becomes
+      # the primary scanned-PDF path).
+      - name: Sync optional keys (connectors + AI providers)
         run: |
           sync() { if [ -n "$2" ]; then printf '%s' "$2" | npx wrangler secret put "$1"; else echo "skip $1 (not set)"; fi; }
           sync DROPBOX_APP_KEY "$DROPBOX_APP_KEY"
@@ -54,6 +91,9 @@ jobs:
           sync GOOGLE_OAUTH_CLIENT_ID "$GOOGLE_OAUTH_CLIENT_ID"
           sync MS_CLIENT_ID "$MS_CLIENT_ID"
           sync MS_TENANT_ID "$MS_TENANT_ID"
+          sync ANTHROPIC_API_KEY "$ANTHROPIC_API_KEY"
+          sync MISTRAL_API_KEY "$MISTRAL_API_KEY"
+          sync GOOGLE_AI_API_KEY "$GOOGLE_AI_API_KEY"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: f84f7181c051be0040e972dcad48e697
@@ -62,3 +102,6 @@ jobs:
           GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           MS_CLIENT_ID: ${{ secrets.MS_CLIENT_ID }}
           MS_TENANT_ID: ${{ secrets.MS_TENANT_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          GOOGLE_AI_API_KEY: ${{ secrets.GOOGLE_AI_API_KEY }}

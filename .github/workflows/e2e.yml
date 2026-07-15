@@ -18,7 +18,7 @@ concurrency:
 jobs:
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
 
@@ -37,9 +37,23 @@ jobs:
         env:
           # workflow_dispatch input wins; otherwise test production.
           BASE_URL: ${{ github.event.inputs.base_url || 'https://successio.pro' }}
-          # Repo secret if provided, else the known fallback the purge endpoint
-          # accepts. The endpoint can only ever delete e2e+ test accounts.
-          E2E_ADMIN_TOKEN: ${{ secrets.E2E_ADMIN_TOKEN || 'successio-e2e-purge-2026' }}
+          # Must match the Worker's E2E_ADMIN_TOKEN secret (synced by deploy.yml
+          # from the same repo secret). No fallback — unset means the seed/purge
+          # endpoints are disabled and the account-based specs will skip/fail.
+          E2E_ADMIN_TOKEN: ${{ secrets.E2E_ADMIN_TOKEN }}
+
+      # Belt-and-suspenders: purge any e2e+ accounts the test runners left
+      # behind (happens when CI is killed before afterAll completes).
+      # Targets only accounts older than 2 hours — safe to run mid-test-run.
+      - name: Purge stale E2E accounts
+        if: always()
+        run: |
+          curl -sf -X POST "${BASE_URL}/api/admin/purge-stale-e2e" \
+            -H "Content-Type: application/json" \
+            -d "{\"token\":\"${E2E_ADMIN_TOKEN}\"}" || true
+        env:
+          BASE_URL: ${{ github.event.inputs.base_url || 'https://successio.pro' }}
+          E2E_ADMIN_TOKEN: ${{ secrets.E2E_ADMIN_TOKEN }}
 
       - name: Upload Playwright report
         if: ${{ always() }}

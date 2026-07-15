@@ -12,18 +12,7 @@ import { SopCard } from "@/components/knowledge/sop-card";
 import { useMediaRecorder } from "@/hooks/use-media-recorder";
 import { trpc } from "@/lib/trpc-client";
 import { cn } from "@/lib/utils";
-
-// Prompted questions (manufacturing default — Phase 5: load from verticals config per org)
-const PROMPTS = [
-  "How do you quote a job from scratch?",
-  "Who are your three most important customers, and why do they keep coming back?",
-  "What breaks most often on the shop floor — and how do you handle it?",
-  "If you were gone for a month, what would go wrong first?",
-  "Walk me through a job from order to shipping.",
-  "What does your quality check process look like?",
-  "How do you handle a difficult customer or a job gone wrong?",
-  "What's the most important thing a new owner would need to know on day one?",
-];
+import { questionsForVertical } from "@/lib/interview-questions";
 
 function formatDuration(secs: number) {
   const m = Math.floor(secs / 60).toString().padStart(2, "0");
@@ -54,6 +43,9 @@ export default function KnowledgePage() {
 
   const utils = trpc.useUtils();
   const { data: sops = [], isLoading: sopsLoading } = trpc.knowledge.listSops.useQuery();
+  const { data: org } = trpc.businesses.getOrg.useQuery();
+  // Interview questions match the org's trade (falls back to manufacturing).
+  const PROMPTS = questionsForVertical(org?.vertical);
 
   const processRecording = trpc.knowledge.processRecording.useMutation({
     onSuccess: (data) => {

@@ -61,51 +61,8 @@ export const documentTypeSchema = z.enum([
 
 export type DocumentType = z.infer<typeof documentTypeSchema>;
 
-// ─── Extraction Output ─────────────────────────────────────────────────────────
-
-export const extractedCustomerSchema = z.object({
-  name: z.string(),
-  revenueShare: z.number().min(0).max(1).optional(),
-  contractStatus: z.enum(["active", "expired", "month-to-month"]).optional(),
-  notes: z.string().optional(),
-  confidence: z.number().min(0).max(1),
-});
-
-export const extractedEquipmentSchema = z.object({
-  name: z.string(),
-  manufacturer: z.string().optional(),
-  model: z.string().optional(),
-  yearInstalled: z.number().int().optional(),
-  condition: z.enum(["excellent", "good", "fair", "poor"]).optional(),
-  estimatedValue: z.number().optional(),
-  confidence: z.number().min(0).max(1),
-});
-
-export const extractedFinancialSchema = z.object({
-  year: z.number().int(),
-  revenue: z.number().optional(),
-  grossProfit: z.number().optional(),
-  ebitda: z.number().optional(),
-  ownerCompensation: z.number().optional(),
-  confidence: z.number().min(0).max(1),
-});
-
-export const extractedProcessSchema = z.object({
-  title: z.string(),
-  steps: z.array(z.string()),
-  owner: z.string().optional(),
-  confidence: z.number().min(0).max(1),
-});
-
-// Discriminated union for the `data` blob in extracted_entities
-export const extractedEntityDataSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("customer"), ...extractedCustomerSchema.shape }),
-  z.object({ type: z.literal("equipment"), ...extractedEquipmentSchema.shape }),
-  z.object({ type: z.literal("financial"), ...extractedFinancialSchema.shape }),
-  z.object({ type: z.literal("process"), ...extractedProcessSchema.shape }),
-]);
-
-export type ExtractedEntityData = z.infer<typeof extractedEntityDataSchema>;
+// NOTE: the authoritative Zod schemas for LLM extraction output live in
+// src/server/workers/extract.ts (snake_case, matching the prompt contract).
 
 // ─── Readiness ────────────────────────────────────────────────────────────────
 

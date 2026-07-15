@@ -18,12 +18,14 @@ CF_AI_GATEWAY_ID=successio-prod
 # App secrets
 JWT_SECRET=
 ENCRYPTION_KEY=
+# Password for the /superadmin CRM (32+ chars). Prod: GitHub repo secret,
+# synced to the Worker on every deploy.
+SUPER_ADMIN_TOKEN=
+# Gates the E2E seed/purge endpoints. Unset = endpoints disabled (fail closed).
+E2E_ADMIN_TOKEN=
 
-# R2 S3-API credentials (Cloudflare dashboard → R2 → Manage API tokens)
-# Used to generate presigned upload/download URLs for direct browser ↔ R2 transfer.
-R2_ACCESS_KEY_ID=
-R2_SECRET_ACCESS_KEY=
-R2_BUCKET_NAME=successio-documents
+# NOTE: R2 S3-API credentials were removed — uploads/downloads go through the
+# R2 binding (POST /api/upload), so no presigned-URL keys are needed.
 
 # Sentry error monitoring.
 # - SENTRY_DSN: server/edge/worker runtime DSN. In production this is a CF

@@ -85,6 +85,54 @@ export function associationInviteEmail(opts: {
   };
 }
 
+export function reEngagementEmail(opts: {
+  name?: string;
+  orgName: string;
+  signals: string[];
+  url: string;
+}): Built {
+  const hi = opts.name ? `Hi ${opts.name},` : "Hi,";
+  const bullets = opts.signals
+    .map((s) => `<li style="margin-bottom:8px;">${s}</li>`)
+    .join("");
+  return {
+    subject: `${opts.orgName}: your sale readiness needs attention`,
+    html: layout({
+      heading: "Don't lose your progress",
+      bodyHtml: `<p style="margin:0 0 16px;">${hi}</p>
+        <p style="margin:0 0 16px;">A few things on <strong>${opts.orgName}</strong> need your attention:</p>
+        <ul style="margin:0 0 20px;padding-left:20px;">${bullets}</ul>
+        <p style="margin:0 0 24px;">${button(opts.url, "Return to Successio")}</p>
+        <p style="margin:0;color:#94a3b8;font-size:13px;">You're receiving this because you have a Successio account. Reply to unsubscribe.</p>`,
+    }),
+    text: `${hi}\n\nA few things on ${opts.orgName} need your attention:\n${opts.signals.map((s) => `- ${s}`).join("\n")}\n\nReturn to Successio:\n${opts.url}`,
+  };
+}
+
+export function documentRequestEmail(opts: {
+  name?: string;
+  orgName: string;
+  requesterName: string;
+  requesterEmail: string;
+  requestText: string;
+  url: string;
+}): Built {
+  const hi = opts.name ? `Hi ${opts.name},` : "Hi,";
+  const safeRequest = opts.requestText.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return {
+    subject: `A buyer requested documents from ${opts.orgName}`,
+    html: layout({
+      heading: "New document request",
+      bodyHtml: `<p style="margin:0 0 16px;">${hi}</p>
+        <p style="margin:0 0 16px;"><strong>${opts.requesterName}</strong> (${opts.requesterEmail}) viewed your deal room and asked for:</p>
+        <blockquote style="margin:0 0 20px;padding:12px 16px;border-left:3px solid ${AMBER};background:#fffbeb;color:${INK};border-radius:0 8px 8px 0;">${safeRequest}</blockquote>
+        <p style="margin:0 0 8px;color:${SOFT};">Nothing is shared automatically — review the request and decide what to send.</p>
+        <p style="margin:0 0 24px;">${button(opts.url, "Review in your Deal Room")}</p>`,
+    }),
+    text: `${hi}\n\n${opts.requesterName} (${opts.requesterEmail}) viewed your deal room and asked for:\n\n"${opts.requestText}"\n\nNothing is shared automatically — review the request and decide what to send:\n${opts.url}`,
+  };
+}
+
 export function processingCompleteEmail(opts: {
   name?: string;
   orgName: string;

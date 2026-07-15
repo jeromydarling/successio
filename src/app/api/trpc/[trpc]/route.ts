@@ -1,7 +1,8 @@
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "@/server/api/root";
-import { createContext } from "@/server/trpc";
+import { createContext, type Context } from "@/server/trpc";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { validateEnv } from "@/lib/env";
 
 /**
  * CSRF defense: reject cross-origin state-changing requests. tRPC mutations are
@@ -34,6 +35,14 @@ async function handler(req: Request): Promise<Response> {
   try {
     const ctx = await getCloudflareContext();
     env = ctx.env as Record<string, unknown>;
+    // Fail loudly on a misconfigured deployment (e.g. missing JWT_SECRET)
+    // instead of surfacing as a cryptic error deep inside session handling.
+    try {
+      validateEnv(env);
+    } catch (err) {
+      console.error("[tRPC] env validation failed:", err);
+      return Response.json({ error: "Server misconfigured" }, { status: 500 });
+    }
   } catch {
     // Local Next.js dev without wrangler — use process.env stubs
     env = {
@@ -47,7 +56,7 @@ async function handler(req: Request): Promise<Response> {
     endpoint: "/api/trpc",
     req,
     router: appRouter,
-    createContext: ({ req, resHeaders }) => createContext(req, env as any, resHeaders),
+    createContext: ({ req, resHeaders }) => createContext(req, env as unknown as Context["env"], resHeaders),
     onError({ error, path }) {
       if (error.code === "INTERNAL_SERVER_ERROR") {
         console.error(`[tRPC] ${path}:`, error);

@@ -30,6 +30,42 @@ interface ImportBody {
   files: ImportFile[];
 }
 
+/**
+ * SSRF guard: download URLs are fetched server-side, so only known provider
+ * hosts are allowed — never arbitrary URLs (which could reach internal
+ * services or poison the pipeline with attacker-controlled content).
+ */
+const ALLOWED_URL_HOSTS: Record<Exclude<Provider, "google">, (host: string) => boolean> = {
+  dropbox: (h) =>
+    h === "dropbox.com" ||
+    h === "www.dropbox.com" ||
+    h === "dl.dropboxusercontent.com" ||
+    h.endsWith(".dl.dropboxusercontent.com") ||
+    h.endsWith(".dropboxusercontent.com"),
+  onedrive: (h) =>
+    h === "graph.microsoft.com" ||
+    h === "onedrive.live.com" ||
+    h === "api.onedrive.com" ||
+    h.endsWith(".1drv.com") ||
+    h.endsWith(".sharepoint.com") ||
+    h.endsWith(".storage.live.com"),
+  sharepoint: (h) => h === "graph.microsoft.com" || h.endsWith(".sharepoint.com"),
+};
+
+function assertAllowedUrl(provider: Provider, rawUrl: string): void {
+  if (provider === "google") return; // google path builds its own googleapis.com URL
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    throw new Error("Invalid download URL");
+  }
+  const check = ALLOWED_URL_HOSTS[provider];
+  if (url.protocol !== "https:" || !check(url.hostname.toLowerCase())) {
+    throw new Error("Download URL is not from an allowed provider host");
+  }
+}
+
 /** Google Workspace native types must be exported to a real file format. */
 function googleExportType(mimeType: string): string | null {
   switch (mimeType) {
@@ -70,6 +106,7 @@ async function fetchFile(
 
   // Dropbox / OneDrive / SharePoint: pre-authenticated direct URL.
   if (!file.url) throw new Error("Missing download URL");
+  assertAllowedUrl(provider, file.url);
   const res = await fetch(file.url);
   if (!res.ok) throw new Error(`Download failed (${res.status})`);
   const bytes = await res.arrayBuffer();

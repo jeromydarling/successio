@@ -34,10 +34,17 @@ const ENTITY_META: Record<string, { label: string; Icon: React.ElementType; colo
 export function DocumentSlideOver({ documentId, onClose }: Props) {
   const overlayRef = useRef<HTMLDivElement>(null);
 
+  const utils = trpc.useUtils();
   const { data, isLoading } = trpc.documents.getDetail.useQuery(
     { id: documentId! },
     { enabled: !!documentId }
   );
+  const markReviewed = trpc.documents.markReviewed.useMutation({
+    onSuccess: () => {
+      utils.documents.getDetail.invalidate({ id: documentId! });
+      utils.documents.list.invalidate();
+    },
+  });
 
   // Close on Escape
   useEffect(() => {
@@ -105,6 +112,28 @@ export function DocumentSlideOver({ documentId, onClose }: Props) {
               ) : data ? (
                 <>
                   <MetaGrid doc={data.doc} />
+                  {data.doc.status === "needs_review" && (
+                    <div className="rounded-xl border border-orange-500/25 bg-orange-500/[0.06] p-4">
+                      <div className="flex items-start gap-3">
+                        <AlertTriangle className="size-4 shrink-0 text-orange-400 mt-0.5" />
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-ink">Some extractions need your eyes</p>
+                          <p className="mt-1 text-xs leading-relaxed text-ink-soft">
+                            The AI wasn&apos;t fully confident about some of the data below. Check it —
+                            fix anything wrong on the Business Data page — then confirm.
+                          </p>
+                          <button
+                            onClick={() => markReviewed.mutate({ documentId: documentId! })}
+                            disabled={markReviewed.isPending}
+                            className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-orange-500/15 border border-orange-500/30 px-3 py-1.5 text-xs font-semibold text-orange-300 transition-colors hover:bg-orange-500/25 disabled:opacity-50"
+                          >
+                            <CheckCircle2 className="size-3.5" />
+                            {markReviewed.isPending ? "Confirming…" : "Looks right — mark reviewed"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   <EntityList entities={data.entities} />
                   {data.doc.ocrText && <OcrSection text={data.doc.ocrText} />}
                 </>
@@ -122,6 +151,7 @@ export function DocumentSlideOver({ documentId, onClose }: Props) {
 // ── Sub-sections ──────────────────────────────────────────────────────────────
 
 interface DocRecord {
+  id?: string;
   originalName: string;
   status: string;
   fileType?: string | null;
@@ -158,6 +188,15 @@ function MetaGrid({ doc }: { doc: DocRecord }) {
           <AlertTriangle className="size-4 shrink-0 text-red-400 mt-0.5" />
           <p className="text-xs text-red-300">{doc.errorMessage}</p>
         </div>
+      )}
+      {doc.id && (
+        <a
+          href={`/api/document-file/${doc.id}?download=1`}
+          className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-amber/80 hover:text-amber"
+        >
+          <FileText className="size-3.5" />
+          Download original file
+        </a>
       )}
     </div>
   );

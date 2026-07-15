@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Building2, Lock, AlertTriangle, Loader2 } from "lucide-react";
+import { Building2, Lock, AlertTriangle, Loader2, FileQuestion, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useTranslate, TranslateMenu } from "@/components/shared/translate";
@@ -40,6 +40,12 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
   const [ndaAccepted, setNdaAccepted] = useState(false);
   const [ndaSubmitting, setNdaSubmitting] = useState(false);
 
+  // Engagement tracking: which sections the visitor actually scrolled to, and
+  // for how long they had the page open. Flushed via sendBeacon on page hide.
+  const viewIdRef = useRef<string | null>(null);
+  const viewedSectionsRef = useRef<Set<string>>(new Set());
+  const openedAtRef = useRef<number>(Date.now());
+
   // Resolve params
   useEffect(() => {
     params.then((p) => setToken(p.token));
@@ -53,11 +59,36 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
         body: JSON.stringify(extra ?? {}),
       });
       if (!res.ok) return null;
-      return (await res.json()) as { profile?: Record<string, string>; org?: ShareData["org"] };
+      const json = (await res.json()) as { viewId?: string; profile?: Record<string, string>; org?: ShareData["org"] };
+      if (json.viewId) viewIdRef.current = json.viewId;
+      return json;
     } catch {
       return null;
     }
   }, []);
+
+  // Flush the engagement beacon when the visitor leaves or hides the tab.
+  useEffect(() => {
+    if (!token) return;
+    const flush = () => {
+      if (!viewIdRef.current) return;
+      const payload = JSON.stringify({
+        viewId: viewIdRef.current,
+        sections: [...viewedSectionsRef.current].slice(0, 20),
+        durationSeconds: Math.min(Math.round((Date.now() - openedAtRef.current) / 1000), 86_400),
+      });
+      try {
+        navigator.sendBeacon(`/api/share/${token}/track`, payload);
+      } catch { /* beacon is best-effort */ }
+    };
+    const onVisibility = () => { if (document.visibilityState === "hidden") flush(); };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [token]);
 
   useEffect(() => {
     if (!token) return;
@@ -226,6 +257,8 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.07 }}
+                  onViewportEnter={() => viewedSectionsRef.current.add(key)}
+                  viewport={{ amount: 0.4 }}
                   className="rounded-2xl border border-edge bg-canvas-soft/30 p-6"
                 >
                   <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-amber">
@@ -236,6 +269,11 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
                   </p>
                 </motion.section>
               ))}
+
+            {/* Buyer tier: request specific documents (human-in-the-loop) */}
+            {data.tier === "buyer" && token && (
+              <DocumentRequestCard token={token} defaultName={ndaName} defaultEmail={ndaEmail} />
+            )}
 
             {/* Confidentiality footer */}
             <div className="rounded-xl bg-white/[0.02] p-4 text-center">
@@ -250,6 +288,82 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
           </motion.div>
         )}
       </main>
+    </div>
+  );
+}
+
+function DocumentRequestCard({ token, defaultName, defaultEmail }: { token: string; defaultName: string; defaultEmail: string }) {
+  const [name, setName] = useState(defaultName);
+  const [email, setEmail] = useState(defaultEmail);
+  const [request, setRequest] = useState("");
+  const [state, setState] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const submit = async () => {
+    setState("sending");
+    setErrorMsg("");
+    try {
+      const res = await fetch(`/api/share/${token}/request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, request }),
+      });
+      if (res.ok) {
+        setState("sent");
+      } else {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        setErrorMsg(body.error ?? "Something went wrong — try again.");
+        setState("error");
+      }
+    } catch {
+      setErrorMsg("Network error — try again.");
+      setState("error");
+    }
+  };
+
+  if (state === "sent") {
+    return (
+      <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.05] p-6 text-center">
+        <Check className="mx-auto size-6 text-emerald-400" />
+        <p className="mt-2 text-sm font-medium text-ink">Request sent to the owner</p>
+        <p className="mt-1 text-xs text-ink-soft">
+          They&apos;ll review it and follow up with you at {email}.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-sky-500/20 bg-sky-500/[0.04] p-6">
+      <div className="mb-4 flex items-center gap-3">
+        <FileQuestion className="size-5 text-sky-400" />
+        <h2 className="text-base font-semibold text-ink">Need something specific?</h2>
+      </div>
+      <p className="mb-4 text-sm text-ink-soft">
+        Request additional documents — tax returns, customer contracts, equipment appraisals —
+        and the owner will review and respond directly. Nothing is shared automatically.
+      </p>
+      <div className="space-y-3">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" className="input-base" />
+          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="Your email" className="input-base" />
+        </div>
+        <textarea
+          value={request}
+          onChange={(e) => setRequest(e.target.value)}
+          rows={3}
+          placeholder="e.g. Last 3 years of tax returns and the customer contract for your largest account"
+          className="input-base resize-none"
+        />
+        {errorMsg && <p className="text-xs text-red-400">{errorMsg}</p>}
+        <Button
+          onClick={submit}
+          disabled={!name || !email || request.trim().length < 5 || state === "sending"}
+        >
+          {state === "sending" ? <Loader2 className="size-4 animate-spin" /> : <FileQuestion className="size-4" />}
+          Send request to owner
+        </Button>
+      </div>
     </div>
   );
 }

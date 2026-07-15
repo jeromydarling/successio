@@ -13,17 +13,19 @@ import {
   businessProfiles,
   shareTokens,
   shareViews,
+  documentRequests,
   customers,
   financials,
   employees,
   processes,
   equipment,
 } from "@/db/schema";
-import { makeGateway, MODELS } from "@/lib/ai-gateway";
+import { makeGateway, modelsFor } from "@/lib/ai-gateway";
 import { extractJson } from "@/lib/json";
 import { buildProfilePrompt } from "@/prompts/manufacturing/profile";
 import { renderProfilePdf } from "@/lib/pdf";
 import { nanoid } from "@/lib/nanoid";
+import { dedupeFinancialsByYear } from "@/lib/financials";
 
 const SECTION_LABELS: Record<string, string> = {
   executive_summary:    "Executive Summary",
@@ -78,14 +80,14 @@ export const profilesRouter = router({
     const prompt = buildProfilePrompt({
       org,
       customers: custs.map(c => ({ name: c.name, revenueShare: c.revenueShare, contractStatus: c.contractStatus })),
-      financials: fins.map(f => ({ year: f.year, revenue: f.revenue, grossProfit: f.grossProfit, ebitda: f.ebitda, ownerCompensation: f.ownerCompensation })),
+      financials: dedupeFinancialsByYear(fins).map(f => ({ year: f.year, revenue: f.revenue, grossProfit: f.grossProfit, ebitda: f.ebitda, ownerCompensation: f.ownerCompensation })),
       employees: emps.map(e => ({ name: e.name, role: e.role, tenureYears: e.tenureYears, isKeyPerson: e.isKeyPerson ?? false })),
       processes: procs.map(p => ({ title: p.title, steps: p.steps })),
       equipment: equips.map(e => ({ name: e.name, manufacturer: e.manufacturer, yearInstalled: e.yearInstalled, estimatedValue: e.estimatedValue })),
     });
 
     const result = await gateway.complete({
-      model: MODELS.profile_draft,
+      model: modelsFor(ctx.env).profile_draft,
       messages: [{ role: "user", content: prompt }],
       max_tokens: 8192,
       temperature: 0.3,
@@ -180,9 +182,20 @@ export const profilesRouter = router({
     return { ready: true };
   }),
 
-  /** Create or retrieve a share token for a given tier. */
+  /** Create or retrieve a share token for a given tier, with optional expiry
+   *  and view limit. Confidential tiers default to a 90-day expiry so an
+   *  NDA-gated link never quietly lives forever. */
   getShareToken: protectedProcedure
-    .input(z.object({ tier: z.enum(["public", "nda", "lender", "buyer"]) }))
+    .input(
+      z.object({
+        tier: z.enum(["public", "nda", "lender", "buyer"]),
+        /** Days until the link expires; null = never. Undefined = default
+         *  (never for public teasers, 90 days for confidential tiers). */
+        expiresInDays: z.number().int().min(1).max(365).nullable().optional(),
+        /** Maximum number of views/downloads; null = unlimited. */
+        maxViews: z.number().int().min(1).max(1000).nullable().optional(),
+      })
+    )
     .mutation(async ({ input, ctx }) => {
       const { orgId } = ctx.session;
 
@@ -197,7 +210,16 @@ export const profilesRouter = router({
 
       if (!profile) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Generate a profile first" });
 
-      // Return existing token for this tier if one exists
+      const days =
+        input.expiresInDays !== undefined
+          ? input.expiresInDays
+          : input.tier === "public"
+          ? null
+          : 90;
+      const expiresAt = days === null ? null : new Date(Date.now() + days * 86400 * 1000);
+
+      // Return existing token for this tier if one exists — applying any
+      // explicitly-passed expiry/view-limit changes to it.
       const existing = await ctx.db
         .select()
         .from(shareTokens)
@@ -208,7 +230,15 @@ export const profilesRouter = router({
         .limit(1)
         .get();
 
-      if (existing) return { token: existing.id, tier: input.tier };
+      if (existing) {
+        const patch: Partial<{ expiresAt: Date | null; maxViews: number | null }> = {};
+        if (input.expiresInDays !== undefined) patch.expiresAt = expiresAt;
+        if (input.maxViews !== undefined) patch.maxViews = input.maxViews;
+        if (Object.keys(patch).length > 0) {
+          await ctx.db.update(shareTokens).set(patch).where(eq(shareTokens.id, existing.id));
+        }
+        return { token: existing.id, tier: input.tier };
+      }
 
       const token = shareToken();
       await ctx.db.insert(shareTokens).values({
@@ -216,6 +246,8 @@ export const profilesRouter = router({
         profileId: profile.id,
         orgId,
         tier: input.tier,
+        expiresAt,
+        maxViews: input.maxViews ?? null,
       });
 
       return { token, tier: input.tier };
@@ -270,6 +302,32 @@ export const profilesRouter = router({
         .where(and(
           eq(shareTokens.id, input.token),
           eq(shareTokens.orgId, ctx.session.orgId)
+        ));
+      return { success: true };
+    }),
+
+  /** Document requests buyers have submitted through buyer-tier links. */
+  listDocumentRequests: protectedProcedure.query(async ({ ctx }) => {
+    return ctx.db
+      .select()
+      .from(documentRequests)
+      .where(eq(documentRequests.orgId, ctx.session.orgId))
+      .orderBy(desc(documentRequests.createdAt))
+      .limit(100)
+      .all();
+  }),
+
+  /** Owner resolves a document request (after sending — or declining to send —
+   *  the documents through their own channel). */
+  resolveDocumentRequest: protectedProcedure
+    .input(z.object({ id: z.string(), status: z.enum(["fulfilled", "declined"]) }))
+    .mutation(async ({ input, ctx }) => {
+      await ctx.db
+        .update(documentRequests)
+        .set({ status: input.status, resolvedAt: new Date() })
+        .where(and(
+          eq(documentRequests.id, input.id),
+          eq(documentRequests.orgId, ctx.session.orgId)
         ));
       return { success: true };
     }),

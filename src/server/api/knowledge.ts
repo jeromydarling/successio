@@ -9,7 +9,7 @@ import { z } from "zod";
 import { eq, and, desc } from "drizzle-orm";
 import { router, protectedProcedure } from "../trpc";
 import { processes, organizations } from "@/db/schema";
-import { makeGateway, MODELS } from "@/lib/ai-gateway";
+import { makeGateway, modelsFor } from "@/lib/ai-gateway";
 import { extractJson } from "@/lib/json";
 import { buildSopPrompt } from "@/prompts/manufacturing/sop";
 import { nanoid } from "@/lib/nanoid";
@@ -31,8 +31,10 @@ export const knowledgeRouter = router({
   processRecording: protectedProcedure
     .input(
       z.object({
-        audioBase64: z.string().min(1),
-        question: z.string().optional(),
+        // ~12 MB of base64 ≈ 9 MB of audio ≈ several minutes of speech.
+        // Unbounded input here would let one request exhaust Worker memory.
+        audioBase64: z.string().min(1).max(12_000_000),
+        question: z.string().max(2000).optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -65,7 +67,7 @@ export const knowledgeRouter = router({
       });
 
       const result = await gateway.complete({
-        model: MODELS.extraction,
+        model: modelsFor(ctx.env).extraction,
         messages: [{ role: "user", content: prompt }],
         max_tokens: 1024,
         temperature: 0,

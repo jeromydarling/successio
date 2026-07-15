@@ -40,7 +40,8 @@ export default function DashboardPage() {
   const { data: checklist = [] } = trpc.businesses.checklist.useQuery(undefined, {
     refetchInterval: 30_000,
   });
-  const { data: docs } = trpc.documents.list.useQuery({ limit: 5 });
+  const { data: docPage } = trpc.documents.list.useQuery({ limit: 5 });
+  const docs = docPage?.items;
   const { data: org } = trpc.businesses.getOrg.useQuery();
 
   useEffect(() => {

@@ -9,6 +9,8 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["tests/**/*.test.ts"],
+    // Unit tests only — tests/integration/** runs inside workerd via
+    // vitest.workers.config.ts (npm run test:integration).
+    include: ["tests/unit/**/*.test.ts"],
   },
 });

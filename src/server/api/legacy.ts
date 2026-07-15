@@ -13,7 +13,7 @@ import { router, protectedProcedure } from "../trpc";
 import {
   organizations, users, customers, financials, employees, processes, orgMilestones, businessProfiles,
 } from "@/db/schema";
-import { makeGateway, MODELS } from "@/lib/ai-gateway";
+import { makeGateway, modelsFor } from "@/lib/ai-gateway";
 import { extractJson } from "@/lib/json";
 import { LEGACY_SYSTEM, buildLegacyBookPrompt } from "@/prompts/shared/legacy-book";
 
@@ -102,7 +102,7 @@ export const legacyRouter = router({
       });
 
       const result = await gateway.complete({
-        model: MODELS.profile_draft,
+        model: modelsFor(ctx.env).profile_draft,
         messages: [
           { role: "system", content: LEGACY_SYSTEM },
           { role: "user", content: prompt },

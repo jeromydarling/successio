@@ -26,6 +26,7 @@ import { runEmbedding } from "@/server/workers/embed";
 import { recalculateScore } from "@/server/workers/score";
 import { getEmailSender } from "@/lib/email/sender";
 import { processingCompleteEmail } from "@/lib/email/templates";
+import { appUrl } from "@/lib/app-url";
 import type { DocumentJob } from "@/types";
 
 /** Document statuses that mean "still being worked on" (vs. a terminal state). */
@@ -52,6 +53,24 @@ interface PipelineEnv {
 
 export class DocumentPipeline extends WorkflowEntrypoint<PipelineEnv, DocumentJob> {
   async run(event: WorkflowEvent<DocumentJob>, step: WorkflowStep) {
+    // If any step exhausts its retries, the whole run fails — without this
+    // handler the document would be stranded in an in-flight status forever.
+    // Mark it failed so the vault can offer a retry, then rethrow so the
+    // workflow run itself is recorded as errored.
+    try {
+      await this.pipeline(event, step);
+    } catch (err) {
+      const db = drizzle(this.env.DB, { schema });
+      const msg = err instanceof Error ? err.message : "Processing failed";
+      await db
+        .update(schema.documents)
+        .set({ status: "failed", errorMessage: msg.slice(0, 500) })
+        .where(eq(schema.documents.id, event.payload.documentId));
+      throw err;
+    }
+  }
+
+  private async pipeline(event: WorkflowEvent<DocumentJob>, step: WorkflowStep) {
     const { documentId, orgId, r2Key, mimeType, vertical } = event.payload;
     const env = this.env;
     const db = drizzle(env.DB, { schema });
@@ -180,7 +199,7 @@ export class DocumentPipeline extends WorkflowEntrypoint<PipelineEnv, DocumentJo
         )
         .get();
 
-      const base = env.APP_URL || "https://successio.pro";
+      const base = appUrl(env);
       const mail = processingCompleteEmail({
         name: owner.name,
         orgName: org?.name ?? "your business",

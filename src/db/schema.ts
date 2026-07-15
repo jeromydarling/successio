@@ -21,12 +21,17 @@ export const organizations = sqliteTable(
     name: text("name").notNull(),
     vertical: text("vertical").notNull(), // manufacturing | hvac | plumbing | electrical | construction | trucking | agriculture
     location: text("location"),
+    // Geocoded coordinates — populated lazily by the admin map view via Nominatim.
+    lat: real("lat"),
+    lng: real("lng"),
     founded: integer("founded"),
     employeeCount: integer("employee_count"),
     annualRevenue: real("annual_revenue"),
     description: text("description"),
     // Multi-tenant: which association this member business belongs to (if any).
     associationId: text("association_id"),
+    // Churn prevention: timestamp of last re-engagement email so we don't spam.
+    churnEmailSentAt: integer("churn_email_sent_at", { mode: "timestamp" }),
     ...timestamps,
   },
   (t) => [index("orgs_assoc_idx").on(t.associationId)]
@@ -363,7 +368,36 @@ export const shareTokens = sqliteTable(
     maxViews: integer("max_views"),
     ...timestamps,
   },
-  (t) => [index("tokens_profile_idx").on(t.profileId)]
+  (t) => [
+    index("tokens_profile_idx").on(t.profileId),
+    index("share_tokens_org_idx").on(t.orgId),
+  ]
+);
+
+// Buyer-tier visitors can ask the owner for specific documents; the owner
+// resolves each request from the Deal Room (human-in-the-loop by design —
+// nothing is auto-released).
+export const documentRequests = sqliteTable(
+  "document_requests",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    tokenId: text("token_id")
+      .notNull()
+      .references(() => shareTokens.id, { onDelete: "cascade" }),
+    requesterName: text("requester_name").notNull(),
+    requesterEmail: text("requester_email").notNull(),
+    requestText: text("request_text").notNull(),
+    status: text("status").notNull().default("pending"), // pending | fulfilled | declined
+    resolvedAt: integer("resolved_at", { mode: "timestamp" }),
+    ...timestamps,
+  },
+  (t) => [
+    index("doc_requests_org_idx").on(t.orgId),
+    index("doc_requests_token_idx").on(t.tokenId),
+  ]
 );
 
 export const shareViews = sqliteTable(
@@ -412,6 +446,22 @@ export const orgMilestones = sqliteTable(
   ]
 );
 
+// ─── Super Admin CRM ─────────────────────────────────────────────────────────
+
+export const adminNotes = sqliteTable(
+  "admin_notes",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    content: text("content").notNull(),
+    author: text("author").notNull(),
+    ...timestamps,
+  },
+  (t) => [index("admin_notes_org_idx").on(t.orgId)]
+);
+
 // ─── Re-exports for convenience ───────────────────────────────────────────────
 
 export type Organization = typeof organizations.$inferSelect;
@@ -427,3 +477,4 @@ export type ShareToken = typeof shareTokens.$inferSelect;
 export type OrgMilestone = typeof orgMilestones.$inferSelect;
 export type Association = typeof associations.$inferSelect;
 export type AssociationInvite = typeof associationInvites.$inferSelect;
+export type AdminNote = typeof adminNotes.$inferSelect;

@@ -2,7 +2,7 @@
 
 import { useState, useDeferredValue } from "react";
 import { motion } from "framer-motion";
-import { Search, FileText, FileSpreadsheet, FileAudio, Image, File, Sparkles } from "lucide-react";
+import { Search, FileText, FileSpreadsheet, FileAudio, Image, File, Sparkles, RotateCw } from "lucide-react";
 import { AppTopNav } from "@/components/app/app-topnav";
 import { DocumentSlideOver } from "@/components/vault/document-slide-over";
 import { trpc } from "@/lib/trpc-client";
@@ -18,6 +18,8 @@ const FILE_ICONS: Record<string, React.ElementType> = {
 const STATUS_FILTERS = [
   "all", "complete", "needs_review", "extracting", "queued", "failed",
 ] as const;
+
+type DocStatus = "queued" | "ocr" | "extracting" | "embedding" | "complete" | "failed" | "needs_review";
 
 type DocItem = {
   id: string;
@@ -40,7 +42,24 @@ export default function VaultPage() {
   const deferredSearch = useDeferredValue(search);
   const isSemanticSearch = deferredSearch.length >= 3;
 
-  const { data: allDocs = [], isLoading: allLoading } = trpc.documents.list.useQuery({ limit: 100 });
+  const utils = trpc.useUtils();
+  const {
+    data: docPages,
+    isLoading: allLoading,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = trpc.documents.list.useInfiniteQuery(
+    {
+      limit: 50,
+      status: statusFilter === "all" ? undefined : (statusFilter as DocStatus),
+    },
+    { getNextPageParam: (last) => last.nextCursor }
+  );
+  const allDocs = docPages?.pages.flatMap((p) => p.items) ?? [];
+  const retryDoc = trpc.documents.retry.useMutation({
+    onSettled: () => utils.documents.list.invalidate(),
+  });
   const { data: semanticResults = [], isFetching: semanticLoading } = trpc.documents.semanticSearch.useQuery(
     { query: deferredSearch },
     { enabled: isSemanticSearch }
@@ -48,14 +67,12 @@ export default function VaultPage() {
 
   const isLoading = allLoading || (isSemanticSearch && semanticLoading);
 
-  // Determine which docs to show
+  // Determine which docs to show (status is filtered server-side)
   const docs: DocItem[] = isSemanticSearch
     ? semanticResults
-    : allDocs.filter((d) => {
-        const matchSearch = !search || d.originalName.toLowerCase().includes(search.toLowerCase());
-        const matchStatus = statusFilter === "all" || d.status === statusFilter;
-        return matchSearch && matchStatus;
-      });
+    : allDocs.filter(
+        (d) => !search || d.originalName.toLowerCase().includes(search.toLowerCase())
+      );
 
   return (
     <>
@@ -132,6 +149,7 @@ export default function VaultPage() {
             >
               {docs.map((doc) => {
                 const Icon = FILE_ICONS[doc.fileType ?? ""] ?? File;
+                const hasThumb = doc.fileType === "image";
                 return (
                   <motion.article
                     key={doc.id}
@@ -142,29 +160,71 @@ export default function VaultPage() {
                     onClick={() => setSelectedDocId(doc.id)}
                     className="group cursor-pointer rounded-xl border border-edge bg-canvas-soft/40 p-4 transition-colors hover:border-amber/30 hover:bg-canvas-soft/60"
                   >
-                    <div className="flex items-start justify-between">
-                      <Icon className="size-7 text-amber/70" />
-                      {doc.relevanceScore != null && (
-                        <span className="rounded-full border border-amber/20 bg-amber/5 px-1.5 py-0.5 font-mono text-[10px] text-amber/70">
-                          {Math.round(doc.relevanceScore * 100)}%
-                        </span>
-                      )}
-                    </div>
+                    {hasThumb ? (
+                      <div className="relative mb-1 h-16 overflow-hidden rounded-lg border border-edge/60 bg-white/[0.03]">
+                        {/* eslint-disable-next-line @next/next/no-img-element -- authed R2 stream, not a static asset */}
+                        <img
+                          src={`/api/document-file/${doc.id}`}
+                          alt=""
+                          loading="lazy"
+                          className="h-full w-full object-cover"
+                        />
+                        {doc.relevanceScore != null && (
+                          <span className="absolute right-1.5 top-1.5 rounded-full border border-amber/20 bg-canvas/80 px-1.5 py-0.5 font-mono text-[10px] text-amber/80">
+                            {Math.round(doc.relevanceScore * 100)}%
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex items-start justify-between">
+                        <Icon className="size-7 text-amber/70" />
+                        {doc.relevanceScore != null && (
+                          <span className="rounded-full border border-amber/20 bg-amber/5 px-1.5 py-0.5 font-mono text-[10px] text-amber/70">
+                            {Math.round(doc.relevanceScore * 100)}%
+                          </span>
+                        )}
+                      </div>
+                    )}
                     <p className="mt-3 truncate text-sm font-medium text-ink">
                       {doc.originalName}
                     </p>
                     <div className="mt-2 flex items-center justify-between">
                       <StatusPill status={doc.status} />
-                      {doc.ocrConfidence != null && (
+                      {doc.status === "failed" ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            retryDoc.mutate({ documentId: doc.id });
+                          }}
+                          disabled={retryDoc.isPending}
+                          className="flex items-center gap-1 rounded-full border border-red-500/30 px-2 py-0.5 text-[10px] font-medium text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-50"
+                        >
+                          <RotateCw className={cn("size-2.5", retryDoc.isPending && "animate-spin")} />
+                          Retry
+                        </button>
+                      ) : doc.ocrConfidence != null ? (
                         <span className="font-mono text-[11px] text-ink-faint">
                           {Math.round(doc.ocrConfidence * 100)}%
                         </span>
-                      )}
+                      ) : null}
                     </div>
                   </motion.article>
                 );
               })}
             </motion.div>
+          )}
+
+          {/* Pagination — server-side cursor, 50 docs per page */}
+          {!isSemanticSearch && hasNextPage && (
+            <div className="flex justify-center pt-2">
+              <button
+                onClick={() => fetchNextPage()}
+                disabled={isFetchingNextPage}
+                className="rounded-full border border-edge px-4 py-2 text-xs font-medium text-ink-soft transition-colors hover:border-edge-strong hover:text-ink disabled:opacity-50"
+              >
+                {isFetchingNextPage ? "Loading…" : "Load more documents"}
+              </button>
+            </div>
           )}
         </div>
       </main>

@@ -27,6 +27,10 @@ CF_AI_GATEWAY_ID = "successio-prod"
 CF_ACCOUNT_ID = "f84f7181c051be0040e972dcad48e697"
 APP_URL = "https://successio.pro"
 EMAIL_FROM = "Successio <noreply@successio.pro>"
+# Signup sends a confirm-email link and creates the account unverified.
+# Verification is soft (the app still works; settings shows a nag until
+# confirmed) — but registering an address you don't own now gets flagged.
+EMAIL_VERIFICATION = "on"
 
 # Cloudflare Email Sending — native binding (no secrets). successio.pro is
 # onboarded + DNS-configured, so this sends from @successio.pro to any recipient.
@@ -53,10 +57,10 @@ binding = "SESSIONS"
 id = "8c591cc451af4dadad6072e67ba401df"
 
 # Browser Rendering — enables scanned-PDF OCR (rasterize pages → vision model).
-# Requires Browser Rendering on the account; uncomment to activate (the OCR path
-# auto-detects env.BROWSER and otherwise flags scanned PDFs for review):
-# [browser]
-# binding = "BROWSER"
+# The OCR path auto-detects env.BROWSER; if the binding ever fails at runtime,
+# scanned PDFs degrade gracefully to "needs review" instead of erroring.
+[browser]
+binding = "BROWSER"
 
 [[queues.producers]]
 queue = "document-jobs"
@@ -66,6 +70,15 @@ binding = "DOCUMENT_QUEUE"
 queue = "document-jobs"
 max_batch_size = 10
 max_retries = 3
+dead_letter_queue = "document-jobs-dlq"
+
+# Dead-letter consumer: jobs that exhausted retries land here and are marked
+# failed in D1, so the vault shows "processing failed — retry" instead of a
+# document stuck on "queued" forever.
+[[queues.consumers]]
+queue = "document-jobs-dlq"
+max_batch_size = 10
+max_retries = 1
 
 [ai]
 binding = "AI"
@@ -82,6 +95,10 @@ class_name = "DealRoomDO"
 name = "document-pipeline"
 binding = "DOCUMENT_WORKFLOW"
 class_name = "DocumentPipeline"
+
+# Churn prevention cron — fires daily at 08:00 UTC.
+[triggers]
+crons = ["0 8 * * *"]
 
 # Durable Object migration — required for the runtime to register the DO classes
 # on first deploy. Both DOs are in-memory (no SQL storage) but use the modern

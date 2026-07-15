@@ -1,33 +1,7 @@
-import type { Env } from "./env";
-
-/**
- * Generates a presigned PUT URL for direct-from-browser R2 upload.
- * The client uploads straight to R2 — the Worker never proxies the file bytes.
- */
-export async function generateUploadUrl(
-  bucket: R2Bucket,
-  key: string,
-  expiresInSeconds = 3600
-): Promise<string> {
-  const url = await (bucket as any).createPresignedUrl("PUT", key, {
-    expiresIn: expiresInSeconds,
-  });
-  return url;
-}
-
-/**
- * Generate a presigned GET URL for serving a document to an authenticated user.
- */
-export async function generateDownloadUrl(
-  bucket: R2Bucket,
-  key: string,
-  expiresInSeconds = 3600
-): Promise<string> {
-  const url = await (bucket as any).createPresignedUrl("GET", key, {
-    expiresIn: expiresInSeconds,
-  });
-  return url;
-}
+// NOTE: uploads/downloads go through the R2 binding (POST /api/upload streams
+// bytes via the Worker) — there are deliberately no presigned-URL helpers here.
+// R2Bucket has no createPresignedUrl API; presigning requires the S3-compat
+// endpoint + aws4fetch (see r2-presign.ts if that route is ever needed).
 
 /**
  * Build the R2 object key for a document upload.

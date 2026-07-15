@@ -37,6 +37,14 @@ const TIERS = [
     color: "text-violet-400",
     bg: "bg-violet-500/10",
   },
+  {
+    key: "buyer" as const,
+    label: "Buyer Access",
+    icon: Users2,
+    description: "Full profile + the buyer can request specific documents, which you approve one by one.",
+    color: "text-sky-400",
+    bg: "bg-sky-500/10",
+  },
 ] as const;
 
 const SECTION_LABELS: Record<string, string> = {
@@ -52,9 +60,13 @@ const SECTION_LABELS: Record<string, string> = {
 };
 
 export default function ProfilePage() {
-  const [activeTier, setActiveTier] = useState<"public" | "nda" | "lender">("public");
+  const [activeTier, setActiveTier] = useState<"public" | "nda" | "lender" | "buyer">("public");
   const [copiedTier, setCopiedTier] = useState<string | null>(null);
   const [expandedSection, setExpandedSection] = useState<string | null>("executive_summary");
+  // Link options for the next "Create link" click. "default" lets the server
+  // pick (never for public, 90 days for confidential tiers).
+  const [linkExpiry, setLinkExpiry] = useState<string>("default");
+  const [linkMaxViews, setLinkMaxViews] = useState<string>("none");
 
   const utils = trpc.useUtils();
   const { data: org } = trpc.businesses.getOrg.useQuery();
@@ -62,6 +74,11 @@ export default function ProfilePage() {
   const { data: profile, isLoading: profileLoading } = trpc.profiles.get.useQuery();
   const { data: views = [] } = trpc.profiles.listViews.useQuery();
   const { data: tokens = [] } = trpc.profiles.listShareTokens.useQuery();
+  const { data: docRequests = [] } = trpc.profiles.listDocumentRequests.useQuery();
+
+  const resolveRequestMutation = trpc.profiles.resolveDocumentRequest.useMutation({
+    onSuccess: () => utils.profiles.listDocumentRequests.invalidate(),
+  });
 
   const generateMutation = trpc.profiles.generate.useMutation({
     onSuccess: () => {
@@ -271,7 +288,14 @@ export default function ProfilePage() {
                     ) : (
                       <Button
                         size="sm"
-                        onClick={() => getTokenMutation.mutate({ tier: activeTier })}
+                        onClick={() =>
+                          getTokenMutation.mutate({
+                            tier: activeTier,
+                            expiresInDays:
+                              linkExpiry === "default" ? undefined : linkExpiry === "never" ? null : parseInt(linkExpiry, 10),
+                            maxViews: linkMaxViews === "none" ? null : parseInt(linkMaxViews, 10),
+                          })
+                        }
                         disabled={getTokenMutation.isPending || !profile}
                       >
                         {getTokenMutation.isPending ? <RefreshCw className="size-4 animate-spin" /> : <Share2 className="size-4" />}
@@ -282,6 +306,55 @@ export default function ProfilePage() {
                 );
               })()}
             </div>
+            {(() => {
+              const tok = tokens.find((t) => t.tier === activeTier);
+              if (tok) {
+                // Existing link: show its expiry / view-cap status.
+                const expiry = tok.expiresAt
+                  ? `expires ${new Date(tok.expiresAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
+                  : "never expires";
+                const views = tok.maxViews
+                  ? `${tok.viewCount}/${tok.maxViews} views used`
+                  : `${tok.viewCount} views`;
+                return (
+                  <p className="mt-2 text-[11px] text-ink-faint">
+                    {expiry} · {views}
+                  </p>
+                );
+              }
+              // No link yet: expiry + view-limit pickers for the one about to be created.
+              return (
+                <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-ink-soft">
+                  <label className="flex items-center gap-1.5">
+                    Expires
+                    <select
+                      value={linkExpiry}
+                      onChange={(e) => setLinkExpiry(e.target.value)}
+                      className="rounded-md border border-edge bg-canvas px-2 py-1 text-xs"
+                    >
+                      <option value="default">{activeTier === "public" ? "Never (default)" : "90 days (default)"}</option>
+                      <option value="7">7 days</option>
+                      <option value="30">30 days</option>
+                      <option value="90">90 days</option>
+                      <option value="never">Never</option>
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-1.5">
+                    View limit
+                    <select
+                      value={linkMaxViews}
+                      onChange={(e) => setLinkMaxViews(e.target.value)}
+                      className="rounded-md border border-edge bg-canvas px-2 py-1 text-xs"
+                    >
+                      <option value="none">Unlimited</option>
+                      <option value="10">10 views</option>
+                      <option value="25">25 views</option>
+                      <option value="100">100 views</option>
+                    </select>
+                  </label>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Communis worker co-op CTA */}
@@ -330,7 +403,67 @@ export default function ProfilePage() {
             </div>
           )}
 
-          {/* Access audit log */}
+          {/* Buyer document requests */}
+          {docRequests.length > 0 && (
+            <section>
+              <h3 className="mb-3 text-sm font-semibold text-ink">
+                Document requests
+                {docRequests.some((r) => r.status === "pending") && (
+                  <span className="ml-2 rounded-full bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium text-sky-400">
+                    {docRequests.filter((r) => r.status === "pending").length} open
+                  </span>
+                )}
+              </h3>
+              <div className="space-y-3">
+                {docRequests.map((r) => (
+                  <div
+                    key={r.id}
+                    className={cn(
+                      "rounded-xl border p-4",
+                      r.status === "pending"
+                        ? "border-sky-500/25 bg-sky-500/[0.04]"
+                        : "border-edge bg-canvas-soft/30 opacity-70"
+                    )}
+                  >
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <p className="text-sm font-medium text-ink">
+                        {r.requesterName}
+                        <span className="ml-2 font-normal text-xs text-ink-soft">{r.requesterEmail}</span>
+                      </p>
+                      <span className="font-mono text-[10px] text-ink-faint">
+                        {new Date(r.createdAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm text-ink-soft whitespace-pre-wrap">{r.requestText}</p>
+                    {r.status === "pending" ? (
+                      <div className="mt-3 flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={resolveRequestMutation.isPending}
+                          onClick={() => resolveRequestMutation.mutate({ id: r.id, status: "fulfilled" })}
+                        >
+                          Mark fulfilled
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={resolveRequestMutation.isPending}
+                          onClick={() => resolveRequestMutation.mutate({ id: r.id, status: "declined" })}
+                        >
+                          Decline
+                        </Button>
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-[11px] uppercase tracking-wide text-ink-faint">{r.status}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Access audit log — engagement column from the share-page beacon */}
           <section>
             <h3 className="mb-3 text-sm font-semibold text-ink">Access log</h3>
             {views.length === 0 ? (
@@ -347,6 +480,7 @@ export default function ProfilePage() {
                       <th className="px-4 py-3 text-left font-medium text-ink-faint">Viewer</th>
                       <th className="px-4 py-3 text-left font-medium text-ink-faint">Email</th>
                       <th className="px-4 py-3 text-left font-medium text-ink-faint">Tier</th>
+                      <th className="px-4 py-3 text-left font-medium text-ink-faint hidden md:table-cell">Read</th>
                       <th className="px-4 py-3 text-left font-medium text-ink-faint">Viewed</th>
                     </tr>
                   </thead>
@@ -358,6 +492,9 @@ export default function ProfilePage() {
                           <td className="px-4 py-3 text-ink">{view.viewerName ?? "Anonymous"}</td>
                           <td className="px-4 py-3 text-ink-soft">{view.viewerEmail ?? "—"}</td>
                           <td className="px-4 py-3 capitalize text-ink-soft">{matchingToken?.tier ?? "—"}</td>
+                          <td className="px-4 py-3 text-ink-soft hidden md:table-cell">
+                            {formatEngagement(view.sectionsViewed, view.durationSeconds)}
+                          </td>
                           <td className="px-4 py-3 font-mono text-ink-faint">
                             {new Date(view.createdAt).toLocaleDateString()}
                           </td>
@@ -373,4 +510,23 @@ export default function ProfilePage() {
       </main>
     </>
   );
+}
+
+/** "3 sections · 4m 12s" from the share-page engagement beacon, or "—". */
+function formatEngagement(sectionsViewed: string | null, durationSeconds: number | null): string {
+  const parts: string[] = [];
+  if (sectionsViewed) {
+    try {
+      const arr = JSON.parse(sectionsViewed) as unknown[];
+      if (Array.isArray(arr) && arr.length > 0) {
+        parts.push(`${arr.length} section${arr.length > 1 ? "s" : ""}`);
+      }
+    } catch { /* ignore malformed */ }
+  }
+  if (durationSeconds != null && durationSeconds > 0) {
+    const m = Math.floor(durationSeconds / 60);
+    const s = durationSeconds % 60;
+    parts.push(m > 0 ? `${m}m ${s}s` : `${s}s`);
+  }
+  return parts.length > 0 ? parts.join(" · ") : "—";
 }
