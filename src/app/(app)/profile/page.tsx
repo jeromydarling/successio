@@ -55,6 +55,10 @@ export default function ProfilePage() {
   const [activeTier, setActiveTier] = useState<"public" | "nda" | "lender">("public");
   const [copiedTier, setCopiedTier] = useState<string | null>(null);
   const [expandedSection, setExpandedSection] = useState<string | null>("executive_summary");
+  // Link options for the next "Create link" click. "default" lets the server
+  // pick (never for public, 90 days for confidential tiers).
+  const [linkExpiry, setLinkExpiry] = useState<string>("default");
+  const [linkMaxViews, setLinkMaxViews] = useState<string>("none");
 
   const utils = trpc.useUtils();
   const { data: org } = trpc.businesses.getOrg.useQuery();
@@ -271,7 +275,14 @@ export default function ProfilePage() {
                     ) : (
                       <Button
                         size="sm"
-                        onClick={() => getTokenMutation.mutate({ tier: activeTier })}
+                        onClick={() =>
+                          getTokenMutation.mutate({
+                            tier: activeTier,
+                            expiresInDays:
+                              linkExpiry === "default" ? undefined : linkExpiry === "never" ? null : parseInt(linkExpiry, 10),
+                            maxViews: linkMaxViews === "none" ? null : parseInt(linkMaxViews, 10),
+                          })
+                        }
                         disabled={getTokenMutation.isPending || !profile}
                       >
                         {getTokenMutation.isPending ? <RefreshCw className="size-4 animate-spin" /> : <Share2 className="size-4" />}
@@ -282,6 +293,55 @@ export default function ProfilePage() {
                 );
               })()}
             </div>
+            {(() => {
+              const tok = tokens.find((t) => t.tier === activeTier);
+              if (tok) {
+                // Existing link: show its expiry / view-cap status.
+                const expiry = tok.expiresAt
+                  ? `expires ${new Date(tok.expiresAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
+                  : "never expires";
+                const views = tok.maxViews
+                  ? `${tok.viewCount}/${tok.maxViews} views used`
+                  : `${tok.viewCount} views`;
+                return (
+                  <p className="mt-2 text-[11px] text-ink-faint">
+                    {expiry} · {views}
+                  </p>
+                );
+              }
+              // No link yet: expiry + view-limit pickers for the one about to be created.
+              return (
+                <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-ink-soft">
+                  <label className="flex items-center gap-1.5">
+                    Expires
+                    <select
+                      value={linkExpiry}
+                      onChange={(e) => setLinkExpiry(e.target.value)}
+                      className="rounded-md border border-edge bg-canvas px-2 py-1 text-xs"
+                    >
+                      <option value="default">{activeTier === "public" ? "Never (default)" : "90 days (default)"}</option>
+                      <option value="7">7 days</option>
+                      <option value="30">30 days</option>
+                      <option value="90">90 days</option>
+                      <option value="never">Never</option>
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-1.5">
+                    View limit
+                    <select
+                      value={linkMaxViews}
+                      onChange={(e) => setLinkMaxViews(e.target.value)}
+                      className="rounded-md border border-edge bg-canvas px-2 py-1 text-xs"
+                    >
+                      <option value="none">Unlimited</option>
+                      <option value="10">10 views</option>
+                      <option value="25">25 views</option>
+                      <option value="100">100 views</option>
+                    </select>
+                  </label>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Communis worker co-op CTA */}

@@ -45,6 +45,41 @@ const handler = openNextHandler as {
   fetch: (req: Request, env: unknown, ctx: ExecutionContext) => Promise<Response>;
 };
 
+// Baseline security headers on every response. The CSP is deliberately
+// conservative (unsafe-inline for Next's inlined scripts/styles, https: for
+// Sentry + OSM tiles) — tighten per-directive once nonce support is wired.
+const SECURITY_HEADERS: Record<string, string> = {
+  "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  // Microphone stays enabled for same-origin: the Knowledge page records SOPs.
+  "Permissions-Policy": "camera=(self), microphone=(self), geolocation=()",
+  "Content-Security-Policy": [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https:",
+    "font-src 'self' data:",
+    "connect-src 'self' https:",
+    "media-src 'self' blob:",
+    "worker-src 'self' blob:",
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+  ].join("; "),
+};
+
+function withSecurityHeaders(res: Response): Response {
+  // WebSocket upgrades can't be re-wrapped.
+  if (res.status === 101) return res;
+  const headers = new Headers(res.headers);
+  for (const [k, v] of Object.entries(SECURITY_HEADERS)) {
+    if (!headers.has(k)) headers.set(k, v);
+  }
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+}
+
 const composedHandler: ExportedHandler<WorkerEnv> = {
   async fetch(req: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
     // Redirect www → apex (301, path + query preserved) for clean canonical URLs.
@@ -53,7 +88,7 @@ const composedHandler: ExportedHandler<WorkerEnv> = {
       url.hostname = "successio.pro";
       return Response.redirect(url.toString(), 301);
     }
-    return handler.fetch(req, env, ctx);
+    return withSecurityHeaders(await handler.fetch(req, env, ctx));
   },
 
   // Queue consumer (document-jobs) — delegates to the existing ingest handler.

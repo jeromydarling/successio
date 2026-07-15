@@ -39,9 +39,21 @@ export async function POST(req: Request): Promise<Response> {
   const documentId = new URL(req.url).searchParams.get("documentId");
   if (!documentId) return new Response("Missing documentId", { status: 400 });
 
+  // Reject oversized bodies before buffering — the declared-size check at
+  // requestUpload time doesn't bind the bytes actually sent here.
+  const MAX_UPLOAD_BYTES = 200 * 1024 * 1024; // matches uploadRequestSchema cap
+  const contentLength = parseInt(req.headers.get("content-length") ?? "", 10);
+  if (Number.isFinite(contentLength) && contentLength > MAX_UPLOAD_BYTES) {
+    return new Response("File too large", { status: 413 });
+  }
+
   const db = drizzle(e.DB, { schema });
   const doc = await db
-    .select({ r2Key: schema.documents.r2Key, mimeType: schema.documents.mimeType })
+    .select({
+      r2Key: schema.documents.r2Key,
+      mimeType: schema.documents.mimeType,
+      sizeBytes: schema.documents.sizeBytes,
+    })
     .from(schema.documents)
     .where(and(eq(schema.documents.id, documentId), eq(schema.documents.orgId, session.orgId)))
     .get();
@@ -49,6 +61,12 @@ export async function POST(req: Request): Promise<Response> {
 
   const body = await req.arrayBuffer();
   if (body.byteLength === 0) return new Response("Empty body", { status: 400 });
+  if (body.byteLength > MAX_UPLOAD_BYTES) return new Response("File too large", { status: 413 });
+  // The bytes must match what requestUpload declared (small slack for
+  // client-side size rounding) — stops declaring 1 KB and sending 200 MB.
+  if (doc.sizeBytes && Math.abs(body.byteLength - doc.sizeBytes) > 1024 * 1024) {
+    return new Response("Upload size does not match the declared file size", { status: 400 });
+  }
 
   await e.DOCUMENTS.put(doc.r2Key, body, {
     httpMetadata: { contentType: doc.mimeType || "application/octet-stream" },

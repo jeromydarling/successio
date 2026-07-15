@@ -1,5 +1,6 @@
 import { SignJWT, jwtVerify, type JWTPayload } from "jose";
 import { z } from "zod";
+import { timingSafeEqual } from "@/lib/timing-safe-equal";
 
 const SESSION_DURATION_SECONDS = 60 * 60 * 24 * 30; // 30 days
 
@@ -162,5 +163,5 @@ export async function verifyPassword(
   const hashHex = Array.from(new Uint8Array(derived))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
-  return hashHex === parts[2];
+  return timingSafeEqual(hashHex, parts[2]);
 }

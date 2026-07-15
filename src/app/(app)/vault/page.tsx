@@ -19,6 +19,8 @@ const STATUS_FILTERS = [
   "all", "complete", "needs_review", "extracting", "queued", "failed",
 ] as const;
 
+type DocStatus = "queued" | "ocr" | "extracting" | "embedding" | "complete" | "failed" | "needs_review";
+
 type DocItem = {
   id: string;
   originalName: string;
@@ -41,7 +43,20 @@ export default function VaultPage() {
   const isSemanticSearch = deferredSearch.length >= 3;
 
   const utils = trpc.useUtils();
-  const { data: allDocs = [], isLoading: allLoading } = trpc.documents.list.useQuery({ limit: 100 });
+  const {
+    data: docPages,
+    isLoading: allLoading,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = trpc.documents.list.useInfiniteQuery(
+    {
+      limit: 50,
+      status: statusFilter === "all" ? undefined : (statusFilter as DocStatus),
+    },
+    { getNextPageParam: (last) => last.nextCursor }
+  );
+  const allDocs = docPages?.pages.flatMap((p) => p.items) ?? [];
   const retryDoc = trpc.documents.retry.useMutation({
     onSettled: () => utils.documents.list.invalidate(),
   });
@@ -52,14 +67,12 @@ export default function VaultPage() {
 
   const isLoading = allLoading || (isSemanticSearch && semanticLoading);
 
-  // Determine which docs to show
+  // Determine which docs to show (status is filtered server-side)
   const docs: DocItem[] = isSemanticSearch
     ? semanticResults
-    : allDocs.filter((d) => {
-        const matchSearch = !search || d.originalName.toLowerCase().includes(search.toLowerCase());
-        const matchStatus = statusFilter === "all" || d.status === statusFilter;
-        return matchSearch && matchStatus;
-      });
+    : allDocs.filter(
+        (d) => !search || d.originalName.toLowerCase().includes(search.toLowerCase())
+      );
 
   return (
     <>
@@ -181,6 +194,19 @@ export default function VaultPage() {
                 );
               })}
             </motion.div>
+          )}
+
+          {/* Pagination — server-side cursor, 50 docs per page */}
+          {!isSemanticSearch && hasNextPage && (
+            <div className="flex justify-center pt-2">
+              <button
+                onClick={() => fetchNextPage()}
+                disabled={isFetchingNextPage}
+                className="rounded-full border border-edge px-4 py-2 text-xs font-medium text-ink-soft transition-colors hover:border-edge-strong hover:text-ink disabled:opacity-50"
+              >
+                {isFetchingNextPage ? "Loading…" : "Load more documents"}
+              </button>
+            </div>
           )}
         </div>
       </main>

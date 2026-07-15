@@ -199,16 +199,22 @@ export const adminRouter = router({
     const orgIds = orgs.map((o) => o.id);
     const scores = await latestScores(ctx.db, orgIds);
 
-    const docCounts = await Promise.all(
-      orgs.map((o) =>
-        ctx.db.select({ n: count() }).from(documents).where(eq(documents.orgId, o.id)).get()
-      )
-    );
+    // Single GROUP BY instead of one count query per member org.
+    const docCountMap = new Map<string, number>();
+    if (orgIds.length > 0) {
+      const rows = await ctx.db
+        .select({ orgId: documents.orgId, n: count() })
+        .from(documents)
+        .where(inArray(documents.orgId, orgIds))
+        .groupBy(documents.orgId)
+        .all();
+      for (const r of rows) docCountMap.set(r.orgId, r.n);
+    }
 
-    return orgs.map((o, i) => ({
+    return orgs.map((o) => ({
       id: o.id, name: o.name, vertical: o.vertical, location: o.location,
       latestScore: scores.get(o.id) ?? null,
-      docCount: docCounts[i]?.n ?? 0,
+      docCount: docCountMap.get(o.id) ?? 0,
     }));
   }),
 

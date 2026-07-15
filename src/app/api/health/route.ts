@@ -18,8 +18,7 @@ interface HealthEnv {
   DOCUMENT_WORKFLOW?: { create: (...args: unknown[]) => unknown };
   BROWSER?: unknown;
   JWT_SECRET: string;
-  R2_ACCESS_KEY_ID?: string;
-  R2_SECRET_ACCESS_KEY?: string;
+  SUPER_ADMIN_TOKEN?: string;
 }
 
 interface Check {
@@ -95,8 +94,9 @@ export async function GET(req: Request): Promise<Response> {
       return "binding present";
     }),
     check("Secret: JWT_SECRET", async () => (env.JWT_SECRET ? "set" : (() => { throw new Error("missing"); })())),
-    check("Secret: R2_ACCESS_KEY_ID", async () => (env.R2_ACCESS_KEY_ID ? "set" : (() => { throw new Error("missing — uploads will fail"); })())),
-    check("Secret: R2_SECRET_ACCESS_KEY", async () => (env.R2_SECRET_ACCESS_KEY ? "set" : (() => { throw new Error("missing — uploads will fail"); })())),
+    // Note: uploads go through the R2 binding, so the S3-style access keys are
+    // NOT required — they'd only matter if presigned URLs were reintroduced.
+    check("Secret: SUPER_ADMIN_TOKEN", async () => (env.SUPER_ADMIN_TOKEN ? "set" : (() => { throw new Error("missing — /superadmin is locked"); })())),
   ]);
 
   const allOk = checks.every((c) => c.ok);

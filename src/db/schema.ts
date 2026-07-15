@@ -368,7 +368,10 @@ export const shareTokens = sqliteTable(
     maxViews: integer("max_views"),
     ...timestamps,
   },
-  (t) => [index("tokens_profile_idx").on(t.profileId)]
+  (t) => [
+    index("tokens_profile_idx").on(t.profileId),
+    index("share_tokens_org_idx").on(t.orgId),
+  ]
 );
 
 export const shareViews = sqliteTable(

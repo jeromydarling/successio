@@ -13,7 +13,7 @@
  */
 
 import { drizzle } from "drizzle-orm/d1";
-import { eq, sql } from "drizzle-orm";
+import { eq, and, sql, isNull, isNotNull } from "drizzle-orm";
 import * as schema from "@/db/schema";
 import { getEmailSender } from "@/lib/email/sender";
 import { reEngagementEmail } from "@/lib/email/templates";
@@ -144,4 +144,53 @@ export async function runChurnCron(env: ChurnEnv, ctx?: ExecutionContext): Promi
   }
 
   console.info(`[churn-cron] done — ${sent} emails sent`);
+
+  // Piggyback: geocode org locations for the superadmin map. Runs here (once
+  // a day, sequential, 1.1s apart per Nominatim's usage policy) instead of
+  // inside a page request where it would add ~11s of latency.
+  await geocodePendingOrgs(db);
+}
+
+/** Resolve lat/lng for up to 25 orgs that have a location but no coordinates. */
+async function geocodePendingOrgs(db: ReturnType<typeof drizzle<typeof schema>>): Promise<void> {
+  const pending = await db
+    .select({ id: schema.organizations.id, location: schema.organizations.location })
+    .from(schema.organizations)
+    .where(
+      and(
+        isNotNull(schema.organizations.location),
+        isNull(schema.organizations.lat)
+      )
+    )
+    .limit(25)
+    .all();
+
+  let geocoded = 0;
+  for (const org of pending) {
+    try {
+      const q = encodeURIComponent(org.location!);
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1`,
+        {
+          headers: { "User-Agent": "Successio/1.0 (admin-crm; contact@successio.pro)" },
+          signal: AbortSignal.timeout(8_000),
+        }
+      );
+      if (res.ok) {
+        const data = (await res.json()) as Array<{ lat: string; lon: string }>;
+        if (data[0]) {
+          await db
+            .update(schema.organizations)
+            .set({ lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) })
+            .where(eq(schema.organizations.id, org.id));
+          geocoded++;
+        }
+      }
+    } catch {
+      // Non-fatal — the org just stays un-plotted until the next run.
+    }
+    // Respect Nominatim's 1 req/sec rate limit.
+    await new Promise((r) => setTimeout(r, 1100));
+  }
+  if (pending.length > 0) console.info(`[churn-cron] geocoded ${geocoded}/${pending.length} orgs`);
 }

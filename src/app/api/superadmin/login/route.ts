@@ -48,10 +48,13 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ ok: false, error: "Invalid token" }, { status: 403 });
   }
 
+  // Store a digest, not the raw token — a leaked cookie is still a session
+  // credential, but it can never disclose the actual admin secret.
+  const cookieValue = await sha256Hex(expectedToken);
   const res = Response.json({ ok: true });
   res.headers.set(
     "Set-Cookie",
-    `sa_token=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=86400`
+    `sa_token=${cookieValue}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=86400`
   );
   return res;
 }

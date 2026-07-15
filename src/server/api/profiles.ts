@@ -180,9 +180,20 @@ export const profilesRouter = router({
     return { ready: true };
   }),
 
-  /** Create or retrieve a share token for a given tier. */
+  /** Create or retrieve a share token for a given tier, with optional expiry
+   *  and view limit. Confidential tiers default to a 90-day expiry so an
+   *  NDA-gated link never quietly lives forever. */
   getShareToken: protectedProcedure
-    .input(z.object({ tier: z.enum(["public", "nda", "lender", "buyer"]) }))
+    .input(
+      z.object({
+        tier: z.enum(["public", "nda", "lender", "buyer"]),
+        /** Days until the link expires; null = never. Undefined = default
+         *  (never for public teasers, 90 days for confidential tiers). */
+        expiresInDays: z.number().int().min(1).max(365).nullable().optional(),
+        /** Maximum number of views/downloads; null = unlimited. */
+        maxViews: z.number().int().min(1).max(1000).nullable().optional(),
+      })
+    )
     .mutation(async ({ input, ctx }) => {
       const { orgId } = ctx.session;
 
@@ -197,7 +208,16 @@ export const profilesRouter = router({
 
       if (!profile) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Generate a profile first" });
 
-      // Return existing token for this tier if one exists
+      const days =
+        input.expiresInDays !== undefined
+          ? input.expiresInDays
+          : input.tier === "public"
+          ? null
+          : 90;
+      const expiresAt = days === null ? null : new Date(Date.now() + days * 86400 * 1000);
+
+      // Return existing token for this tier if one exists — applying any
+      // explicitly-passed expiry/view-limit changes to it.
       const existing = await ctx.db
         .select()
         .from(shareTokens)
@@ -208,7 +228,15 @@ export const profilesRouter = router({
         .limit(1)
         .get();
 
-      if (existing) return { token: existing.id, tier: input.tier };
+      if (existing) {
+        const patch: Partial<{ expiresAt: Date | null; maxViews: number | null }> = {};
+        if (input.expiresInDays !== undefined) patch.expiresAt = expiresAt;
+        if (input.maxViews !== undefined) patch.maxViews = input.maxViews;
+        if (Object.keys(patch).length > 0) {
+          await ctx.db.update(shareTokens).set(patch).where(eq(shareTokens.id, existing.id));
+        }
+        return { token: existing.id, tier: input.tier };
+      }
 
       const token = shareToken();
       await ctx.db.insert(shareTokens).values({
@@ -216,6 +244,8 @@ export const profilesRouter = router({
         profileId: profile.id,
         orgId,
         tier: input.tier,
+        expiresAt,
+        maxViews: input.maxViews ?? null,
       });
 
       return { token, tier: input.tier };

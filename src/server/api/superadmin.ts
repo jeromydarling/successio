@@ -5,7 +5,7 @@
 
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { eq, desc, and, sql, isNull } from "drizzle-orm";
+import { eq, desc, sql } from "drizzle-orm";
 import { router, superAdminProcedure } from "../trpc";
 import * as schema from "@/db/schema";
 import { nanoid } from "@/lib/nanoid";
@@ -47,10 +47,11 @@ export const superadminRouter = router({
 
         db
           .all<{ org_id: string; score: number }>(
-            sql`SELECT org_id, score FROM readiness_scores WHERE id IN (
-              SELECT id FROM readiness_scores r2 WHERE r2.org_id = readiness_scores.org_id
-              ORDER BY created_at DESC LIMIT 1
-            )`
+            sql`SELECT r.org_id, r.score
+                FROM readiness_scores r
+                JOIN (SELECT org_id, MAX(created_at) AS max_ca
+                      FROM readiness_scores GROUP BY org_id) m
+                  ON m.org_id = r.org_id AND m.max_ca = r.created_at`
           ),
 
         db
@@ -206,48 +207,11 @@ export const superadminRouter = router({
       return { ok: true };
     }),
 
-  /** All orgs with geocoordinates for the map. Lazily geocodes up to 10 un-geocoded orgs. */
+  /** All orgs (with any geocoordinates already resolved) for the map.
+   *  Geocoding itself runs in the daily cron — never inside a page request,
+   *  where Nominatim's 1 req/sec limit would add ~11s of latency. */
   mapData: superAdminProcedure.query(async ({ ctx }) => {
     const db = ctx.db;
-
-    // Find orgs that have a location text but no coordinates yet.
-    const needsGeocode = await db
-      .select({ id: schema.organizations.id, location: schema.organizations.location })
-      .from(schema.organizations)
-      .where(
-        and(
-          sql`${schema.organizations.location} IS NOT NULL`,
-          isNull(schema.organizations.lat)
-        )
-      )
-      .limit(10)
-      .all();
-
-    // Geocode sequentially (Nominatim: 1 req/sec max).
-    for (const org of needsGeocode) {
-      try {
-        const q = encodeURIComponent(org.location!);
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1`,
-          {
-            headers: { "User-Agent": "Successio/1.0 (admin-crm; contact@successio.pro)" },
-            signal: AbortSignal.timeout(8_000),
-          }
-        );
-        if (!res.ok) continue;
-        const data = (await res.json()) as Array<{ lat: string; lon: string }>;
-        if (data[0]) {
-          await db
-            .update(schema.organizations)
-            .set({ lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) })
-            .where(eq(schema.organizations.id, org.id));
-        }
-      } catch {
-        // Non-fatal: just leave lat/lng null.
-      }
-      // Respect Nominatim rate limit.
-      await new Promise((r) => setTimeout(r, 1100));
-    }
 
     const orgs = await db
       .select({
@@ -263,10 +227,11 @@ export const superadminRouter = router({
       .all();
 
     const latestScores = await db.all<{ org_id: string; score: number }>(
-      sql`SELECT org_id, score FROM readiness_scores WHERE id IN (
-        SELECT id FROM readiness_scores r2 WHERE r2.org_id = readiness_scores.org_id
-        ORDER BY created_at DESC LIMIT 1
-      )`
+      sql`SELECT r.org_id, r.score
+          FROM readiness_scores r
+          JOIN (SELECT org_id, MAX(created_at) AS max_ca
+                FROM readiness_scores GROUP BY org_id) m
+            ON m.org_id = r.org_id AND m.max_ca = r.created_at`
     );
     const scoreMap = new Map(latestScores.map((r) => [r.org_id, r.score]));
 

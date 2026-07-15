@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import { router, protectedProcedure } from "../trpc";
 import { documents, organizations, extractedEntities } from "@/db/schema";
 import { documentKey, detectFileType } from "@/lib/r2";
@@ -140,6 +140,9 @@ export const documentsRouter = router({
       return { documentId: doc.id, status: "queued" as const };
     }),
 
+  /** Paginated document list. `cursor` is `${createdAtEpoch}_${id}` of the
+   *  last row of the previous page; `status` filters server-side. Returns
+   *  { items, nextCursor } — nextCursor is undefined on the final page. */
   list: protectedProcedure
     .input(
       z.object({
@@ -152,6 +155,20 @@ export const documentsRouter = router({
     )
     .query(async ({ input, ctx }) => {
       const { orgId } = ctx.session;
+
+      const conditions = [eq(documents.orgId, orgId)];
+      if (input.status) conditions.push(eq(documents.status, input.status));
+      if (input.cursor) {
+        const [tsRaw, id] = input.cursor.split("_");
+        const ts = parseInt(tsRaw, 10);
+        if (Number.isFinite(ts) && id) {
+          conditions.push(
+            sql`(${documents.createdAt} < ${ts} OR (${documents.createdAt} = ${ts} AND ${documents.id} < ${id}))`
+          );
+        }
+      }
+
+      // Fetch one extra row to know whether another page exists.
       const rows = await ctx.db
         .select({
           id: documents.id,
@@ -165,28 +182,19 @@ export const documentsRouter = router({
           createdAt: documents.createdAt,
         })
         .from(documents)
-        .where(eq(documents.orgId, orgId))
-        .orderBy(desc(documents.createdAt))
-        .limit(input.limit);
+        .where(and(...conditions))
+        .orderBy(desc(documents.createdAt), desc(documents.id))
+        .limit(input.limit + 1)
+        .all();
 
-      return rows;
-    }),
+      let nextCursor: string | undefined;
+      if (rows.length > input.limit) {
+        rows.length = input.limit;
+        const last = rows[rows.length - 1];
+        nextCursor = `${Math.floor(last.createdAt.getTime() / 1000)}_${last.id}`;
+      }
 
-  get: protectedProcedure
-    .input(z.object({ id: z.string() }))
-    .query(async ({ input, ctx }) => {
-      const doc = await ctx.db
-        .select()
-        .from(documents)
-        .where(
-          and(
-            eq(documents.id, input.id),
-            eq(documents.orgId, ctx.session.orgId)
-          )
-        )
-        .get();
-      if (!doc) throw new TRPCError({ code: "NOT_FOUND" });
-      return doc;
+      return { items: rows, nextCursor };
     }),
 
   /** Semantic search via Vectorize. Falls back to empty results if VECTORS not bound. */

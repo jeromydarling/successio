@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { timingSafeEqual } from "@/lib/timing-safe-equal";
+import { sha256Hex } from "@/lib/rate-limit";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +21,10 @@ export default async function SuperAdminLayout({ children }: { children: React.R
   const saToken = cookieStore.get("sa_token")?.value;
   const expected = await getSaToken();
 
-  const authed = expected && saToken && timingSafeEqual(saToken, expected);
+  // The cookie carries the SHA-256 digest of the admin token, never the raw
+  // secret (see /api/superadmin/login).
+  const authed =
+    expected && saToken && timingSafeEqual(saToken, await sha256Hex(expected));
   if (!authed) redirect("/superadmin/login");
 
   return (

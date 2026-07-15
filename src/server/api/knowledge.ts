@@ -31,8 +31,10 @@ export const knowledgeRouter = router({
   processRecording: protectedProcedure
     .input(
       z.object({
-        audioBase64: z.string().min(1),
-        question: z.string().optional(),
+        // ~12 MB of base64 ≈ 9 MB of audio ≈ several minutes of speech.
+        // Unbounded input here would let one request exhaust Worker memory.
+        audioBase64: z.string().min(1).max(12_000_000),
+        question: z.string().max(2000).optional(),
       })
     )
     .mutation(async ({ input, ctx }) => {

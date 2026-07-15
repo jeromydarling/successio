@@ -10,6 +10,7 @@ import type { SessionPayload } from "@/lib/auth";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import type * as schema from "@/db/schema";
 import { timingSafeEqual } from "@/lib/timing-safe-equal";
+import { sha256Hex } from "@/lib/rate-limit";
 
 export interface Context {
   db: DrizzleD1Database<typeof schema>;
@@ -73,7 +74,9 @@ export const protectedProcedure = t.procedure.use(async ({ ctx, type, next }) =>
   return next({ ctx: { ...ctx, session: ctx.session } });
 });
 
-/** Throws 401 unless a valid sa_token cookie matches SUPER_ADMIN_TOKEN. */
+/** Throws 401 unless the sa_token cookie carries the SHA-256 digest of
+ *  SUPER_ADMIN_TOKEN (set by /api/superadmin/login — the raw secret is never
+ *  stored in the cookie). */
 export const superAdminProcedure = t.procedure.use(async ({ ctx, next }) => {
   const cookie = ctx.req.headers.get("cookie") ?? "";
   const token = cookie
@@ -82,7 +85,11 @@ export const superAdminProcedure = t.procedure.use(async ({ ctx, next }) => {
     ?.split("=")[1]
     ?.trim();
   const expected = ctx.env.SUPER_ADMIN_TOKEN;
-  if (!expected || !token || !timingSafeEqual(token, expected)) {
+  if (
+    !expected ||
+    !token ||
+    !timingSafeEqual(token, await sha256Hex(expected))
+  ) {
     throw new TRPCError({ code: "UNAUTHORIZED", message: "Super admin access required" });
   }
   return next({ ctx });

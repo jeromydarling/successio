@@ -6,7 +6,7 @@
  */
 
 import { drizzle } from "drizzle-orm/d1";
-import { eq, count, and } from "drizzle-orm";
+import { eq, count, countDistinct, and, inArray } from "drizzle-orm";
 import * as schema from "@/db/schema";
 import { calculateReadiness } from "@/lib/readiness";
 import { nanoid } from "@/lib/nanoid";
@@ -23,7 +23,9 @@ export async function recalculateScore(params: {
   const [custCount, eqCount, finCount, procCount, empCount, certCount] = await Promise.all([
     db.select({ n: count() }).from(schema.customers).where(eq(schema.customers.orgId, orgId)).get(),
     db.select({ n: count() }).from(schema.equipment).where(eq(schema.equipment.orgId, orgId)).get(),
-    db.select({ n: count() }).from(schema.financials).where(eq(schema.financials.orgId, orgId)).get(),
+    // Distinct years — the same year extracted from two documents must not
+    // count as "2 years of P&L".
+    db.select({ n: countDistinct(schema.financials.year) }).from(schema.financials).where(eq(schema.financials.orgId, orgId)).get(),
     db.select({ n: count() }).from(schema.processes).where(eq(schema.processes.orgId, orgId)).get(),
     db.select({ n: count() }).from(schema.employees).where(eq(schema.employees.orgId, orgId)).get(),
     // Compliance proxy: count documents whose detected type suggests certifications or licenses
@@ -131,39 +133,55 @@ async function updateChecklist(
     ["people",    "key_personnel",       "Key personnel identified",     flags.hasKeyPersonnel],
   ];
 
-  for (const [category, key, label, completed] of itemMap) {
-    const existing = await db
-      .select({ id: schema.readinessChecklist.id, completed: schema.readinessChecklist.completed })
-      .from(schema.readinessChecklist)
-      .where(
-        and(
-          eq(schema.readinessChecklist.orgId, orgId),
-          eq(schema.readinessChecklist.itemKey, key)
-        )
+  // One read for all existing rows, then one batch for all writes — the old
+  // per-item select/insert loop cost up to 14 D1 round trips per document.
+  const keys = itemMap.map(([, key]) => key);
+  const existingRows = await db
+    .select({ itemKey: schema.readinessChecklist.itemKey, completed: schema.readinessChecklist.completed })
+    .from(schema.readinessChecklist)
+    .where(
+      and(
+        eq(schema.readinessChecklist.orgId, orgId),
+        inArray(schema.readinessChecklist.itemKey, keys)
       )
-      .get();
+    )
+    .all();
+  const existingByKey = new Map(existingRows.map((r) => [r.itemKey, r.completed]));
 
-    if (!existing) {
-      await db.insert(schema.readinessChecklist).values({
-        id: nanoid(),
-        orgId,
-        vertical,
-        category,
-        itemKey: key,
-        label,
-        completed,
-        completedAt: completed ? new Date() : undefined,
-      }).onConflictDoNothing();
-    } else if (completed && !existing.completed) {
-      // Only update if newly completed — avoid overwriting completedAt timestamp
-      await db.update(schema.readinessChecklist)
+  const inserts = itemMap
+    .filter(([, key]) => !existingByKey.has(key))
+    .map(([category, key, label, completed]) => ({
+      id: nanoid(),
+      orgId,
+      vertical,
+      category,
+      itemKey: key,
+      label,
+      completed,
+      completedAt: completed ? new Date() : undefined,
+    }));
+  // Only flip newly-completed rows — never overwrite an existing completedAt.
+  const newlyCompleted = itemMap
+    .filter(([, key, , completed]) => completed && existingByKey.get(key) === false)
+    .map(([, key]) => key);
+
+  const statements = [];
+  if (inserts.length > 0) {
+    statements.push(db.insert(schema.readinessChecklist).values(inserts).onConflictDoNothing());
+  }
+  if (newlyCompleted.length > 0) {
+    statements.push(
+      db
+        .update(schema.readinessChecklist)
         .set({ completed: true, completedAt: new Date() })
         .where(
           and(
             eq(schema.readinessChecklist.orgId, orgId),
-            eq(schema.readinessChecklist.itemKey, key)
+            inArray(schema.readinessChecklist.itemKey, newlyCompleted)
           )
-        );
-    }
+        )
+    );
   }
+  if (statements.length === 1) await statements[0];
+  else if (statements.length > 1) await db.batch(statements as [typeof statements[0], ...typeof statements]);
 }

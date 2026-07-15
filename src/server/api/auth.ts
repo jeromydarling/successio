@@ -114,20 +114,21 @@ export const authRouter = router({
         }
       }
 
-      await ctx.db.insert(organizations).values({
-        id: orgId,
-        name: input.businessName,
-        vertical: input.vertical,
-        associationId,
-      });
-
       // Email verification is opt-in via the EMAIL_VERIFICATION flag. When it's
       // not "on" (the default), the account is created already-verified and the
       // confirm step is skipped, so a new user can use the whole app at once.
       // Re-enable verification by setting EMAIL_VERIFICATION="on" (one var).
       const verificationOn = ctx.env.EMAIL_VERIFICATION === "on";
 
-      await ctx.db.insert(users).values({
+      // Atomic: org + user (+ invite claim) land together or not at all, so a
+      // duplicate-email race can never leave an orphaned organization row.
+      const orgInsert = ctx.db.insert(organizations).values({
+        id: orgId,
+        name: input.businessName,
+        vertical: input.vertical,
+        associationId,
+      });
+      const userInsert = ctx.db.insert(users).values({
         id: userId,
         orgId,
         email: input.email.toLowerCase(),
@@ -136,12 +137,17 @@ export const authRouter = router({
         passwordHash,
         emailVerifiedAt: verificationOn ? null : new Date(),
       });
-
       if (inviteId) {
-        await ctx.db
-          .update(associationInvites)
-          .set({ status: "claimed", claimedOrgId: orgId })
-          .where(eq(associationInvites.id, inviteId));
+        await ctx.db.batch([
+          orgInsert,
+          userInsert,
+          ctx.db
+            .update(associationInvites)
+            .set({ status: "claimed", claimedOrgId: orgId })
+            .where(eq(associationInvites.id, inviteId)),
+        ]);
+      } else {
+        await ctx.db.batch([orgInsert, userInsert]);
       }
 
       const token = await signSession(

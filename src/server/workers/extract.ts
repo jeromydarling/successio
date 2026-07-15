@@ -181,104 +181,103 @@ async function clearDocumentEntities(db: ReturnType<typeof drizzle>, docId: stri
   ]);
 }
 
-// ── Entity writers (all check confidence threshold) ───────────────────────────
+// ── Entity writers ────────────────────────────────────────────────────────────
+// Every writer applies the per-item confidence threshold: low-confidence items
+// are kept out of the normalized tables (they'd pollute profiles and scores)
+// but remain in the extracted_entities audit blob flagged needs-review, so a
+// human can promote them later. All inserts are single multi-row statements.
+
+const confident = <T extends { confidence: number }>(items: T[]) =>
+  items.filter((i) => i.confidence >= CONFIDENCE_THRESHOLD);
 
 async function writeCustomers(db: ReturnType<typeof drizzle>, items: z.infer<typeof extractedCustomer>[], orgId: string, docId: string) {
-  for (const c of items) {
-    await db.insert(schema.customers).values({
-      id: nanoid(),
-      orgId,
-      name: c.name,
-      revenueShare: c.revenue_share,
-      contractStatus: c.contract_status,
-      notes: c.notes,
-      sourceDocumentId: docId,
-    }).onConflictDoNothing();
-  }
+  const rows = confident(items).map((c) => ({
+    id: nanoid(),
+    orgId,
+    name: c.name,
+    revenueShare: c.revenue_share,
+    contractStatus: c.contract_status,
+    notes: c.notes,
+    sourceDocumentId: docId,
+  }));
+  if (rows.length > 0) await db.insert(schema.customers).values(rows).onConflictDoNothing();
 }
 
 async function writeEquipment(db: ReturnType<typeof drizzle>, items: z.infer<typeof extractedEquipment>[], orgId: string, docId: string) {
-  for (const e of items) {
-    await db.insert(schema.equipment).values({
-      id: nanoid(),
-      orgId,
-      name: e.name,
-      manufacturer: e.manufacturer,
-      model: e.model,
-      yearInstalled: e.year_installed,
-      condition: e.condition,
-      estimatedValue: e.estimated_value,
-      sourceDocumentId: docId,
-    }).onConflictDoNothing();
-  }
+  const rows = confident(items).map((e) => ({
+    id: nanoid(),
+    orgId,
+    name: e.name,
+    manufacturer: e.manufacturer,
+    model: e.model,
+    yearInstalled: e.year_installed,
+    condition: e.condition,
+    estimatedValue: e.estimated_value,
+    sourceDocumentId: docId,
+  }));
+  if (rows.length > 0) await db.insert(schema.equipment).values(rows).onConflictDoNothing();
 }
 
 async function writeFinancials(db: ReturnType<typeof drizzle>, items: z.infer<typeof extractedFinancial>[], orgId: string, docId: string) {
-  for (const f of items) {
-    if (f.confidence < CONFIDENCE_THRESHOLD) continue;
-    await db.insert(schema.financials).values({
-      id: nanoid(),
-      orgId,
-      year: f.year,
-      revenue: f.revenue,
-      grossProfit: f.gross_profit,
-      ebitda: f.ebitda,
-      ownerCompensation: f.owner_compensation,
-      sourceDocumentId: docId,
-    }).onConflictDoNothing();
-  }
+  const rows = confident(items).map((f) => ({
+    id: nanoid(),
+    orgId,
+    year: f.year,
+    revenue: f.revenue,
+    grossProfit: f.gross_profit,
+    ebitda: f.ebitda,
+    ownerCompensation: f.owner_compensation,
+    sourceDocumentId: docId,
+  }));
+  if (rows.length > 0) await db.insert(schema.financials).values(rows).onConflictDoNothing();
 }
 
 async function writeEmployees(db: ReturnType<typeof drizzle>, items: z.infer<typeof extractedEmployee>[], orgId: string, docId: string) {
-  for (const e of items) {
-    await db.insert(schema.employees).values({
-      id: nanoid(),
-      orgId,
-      name: e.name,
-      role: e.role,
-      tenureYears: e.tenure_years,
-      isKeyPerson: e.is_key_person ?? false,
-      notes: e.notes,
-      sourceDocumentId: docId,
-    }).onConflictDoNothing();
-  }
+  const rows = confident(items).map((e) => ({
+    id: nanoid(),
+    orgId,
+    name: e.name,
+    role: e.role,
+    tenureYears: e.tenure_years,
+    isKeyPerson: e.is_key_person ?? false,
+    notes: e.notes,
+    sourceDocumentId: docId,
+  }));
+  if (rows.length > 0) await db.insert(schema.employees).values(rows).onConflictDoNothing();
 }
 
 async function writeProcesses(db: ReturnType<typeof drizzle>, items: z.infer<typeof extractedProcess>[], orgId: string, docId: string) {
-  for (const p of items) {
-    await db.insert(schema.processes).values({
-      id: nanoid(),
-      orgId,
-      title: p.title,
-      steps: JSON.stringify(p.steps),
-      source: "extracted",
-      sourceDocumentId: docId,
-    }).onConflictDoNothing();
-  }
+  const rows = confident(items).map((p) => ({
+    id: nanoid(),
+    orgId,
+    title: p.title,
+    steps: JSON.stringify(p.steps),
+    source: "extracted",
+    sourceDocumentId: docId,
+  }));
+  if (rows.length > 0) await db.insert(schema.processes).values(rows).onConflictDoNothing();
 }
 
 async function writeMilestones(db: ReturnType<typeof drizzle>, items: z.infer<typeof extractedMilestone>[], orgId: string, docId: string) {
-  for (const m of items) {
-    if (m.confidence < CONFIDENCE_THRESHOLD) continue;
-    await db.insert(schema.orgMilestones).values({
-      id: nanoid(),
-      orgId,
-      year: m.year,
-      category: m.category,
-      title: m.title,
-      description: m.description,
-      metricLabel: m.metric_label,
-      metricValue: m.metric_value,
-      source: m.source,
-      sourceDocumentId: docId,
-      isManual: false,
-    }).onConflictDoNothing();
-  }
+  const rows = confident(items).map((m) => ({
+    id: nanoid(),
+    orgId,
+    year: m.year,
+    category: m.category,
+    title: m.title,
+    description: m.description,
+    metricLabel: m.metric_label,
+    metricValue: m.metric_value,
+    source: m.source,
+    sourceDocumentId: docId,
+    isManual: false,
+  }));
+  if (rows.length > 0) await db.insert(schema.orgMilestones).values(rows).onConflictDoNothing();
 }
 
 async function writeEntityBlobs(db: ReturnType<typeof drizzle>, parsed: ExtractionOutput, orgId: string, docId: string) {
   // Persist each entity type as a blob in extracted_entities for audit trail
-  const types: [string, unknown[] | undefined][] = [
+  const types: [string, { confidence: number }[] | undefined][] = [
     ["customer", parsed.customers],
     ["equipment", parsed.equipment],
     ["financial", parsed.financials],
@@ -286,17 +285,22 @@ async function writeEntityBlobs(db: ReturnType<typeof drizzle>, parsed: Extracti
     ["process", parsed.processes],
     ["milestone", parsed.milestones],
   ];
-  for (const [type, items] of types) {
-    if (!items || items.length === 0) continue;
-    const avgConfidence = (items as { confidence: number }[]).reduce((s, i) => s + (i.confidence ?? 0.5), 0) / items.length;
-    await db.insert(schema.extractedEntities).values({
-      id: nanoid(),
-      documentId: docId,
-      orgId,
-      entityType: type,
-      data: JSON.stringify(items),
-      confidence: avgConfidence,
-      needsReview: avgConfidence < CONFIDENCE_THRESHOLD,
+  const rows = types
+    .filter((entry): entry is [string, { confidence: number }[]] => !!entry[1] && entry[1].length > 0)
+    .map(([type, items]) => {
+      const avgConfidence = items.reduce((s, i) => s + (i.confidence ?? 0.5), 0) / items.length;
+      // Needs review if the average is weak OR any single item fell below the
+      // threshold (those items were withheld from the normalized tables).
+      const anyLow = items.some((i) => (i.confidence ?? 0.5) < CONFIDENCE_THRESHOLD);
+      return {
+        id: nanoid(),
+        documentId: docId,
+        orgId,
+        entityType: type,
+        data: JSON.stringify(items),
+        confidence: avgConfidence,
+        needsReview: avgConfidence < CONFIDENCE_THRESHOLD || anyLow,
+      };
     });
-  }
+  if (rows.length > 0) await db.insert(schema.extractedEntities).values(rows);
 }
