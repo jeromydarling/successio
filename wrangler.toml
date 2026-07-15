@@ -53,10 +53,10 @@ binding = "SESSIONS"
 id = "8c591cc451af4dadad6072e67ba401df"
 
 # Browser Rendering — enables scanned-PDF OCR (rasterize pages → vision model).
-# Requires Browser Rendering on the account; uncomment to activate (the OCR path
-# auto-detects env.BROWSER and otherwise flags scanned PDFs for review):
-# [browser]
-# binding = "BROWSER"
+# The OCR path auto-detects env.BROWSER; if the binding ever fails at runtime,
+# scanned PDFs degrade gracefully to "needs review" instead of erroring.
+[browser]
+binding = "BROWSER"
 
 [[queues.producers]]
 queue = "document-jobs"

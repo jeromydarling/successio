@@ -14,6 +14,7 @@ import { timingSafeEqual } from "@/lib/timing-safe-equal";
 export interface Context {
   db: DrizzleD1Database<typeof schema>;
   env: {
+    DB: D1Database;
     DOCUMENTS: R2Bucket;
     AI: Ai;
     JWT_SECRET: string;
@@ -90,7 +91,7 @@ export const superAdminProcedure = t.procedure.use(async ({ ctx, next }) => {
 /** Creates a Context from a raw Request + bound env. */
 export async function createContext(
   req: Request,
-  env: Context["env"] & { DB: D1Database; JWT_SECRET: string },
+  env: Context["env"],
   resHeaders: Headers = new Headers()
 ): Promise<Context> {
   const { drizzle } = await import("drizzle-orm/d1");
