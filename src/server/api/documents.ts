@@ -295,4 +295,39 @@ export const documentsRouter = router({
 
       return { doc, entities };
     }),
+
+  /** Owner confirms the low-confidence extractions for a document are correct
+   *  (after checking — and fixing anything wrong on the Business Data page).
+   *  Stamps reviewedAt on its entities and completes the document. */
+  markReviewed: protectedProcedure
+    .input(z.object({ documentId: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const { orgId } = ctx.session;
+
+      const doc = await ctx.db
+        .select({ id: documents.id, status: documents.status })
+        .from(documents)
+        .where(and(eq(documents.id, input.documentId), eq(documents.orgId, orgId)))
+        .get();
+      if (!doc) throw new TRPCError({ code: "NOT_FOUND", message: "Document not found" });
+      if (doc.status !== "needs_review") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "This document isn't awaiting review." });
+      }
+
+      await ctx.db
+        .update(extractedEntities)
+        .set({ needsReview: false, reviewedAt: new Date() })
+        .where(
+          and(
+            eq(extractedEntities.documentId, input.documentId),
+            eq(extractedEntities.orgId, orgId)
+          )
+        );
+      await ctx.db
+        .update(documents)
+        .set({ status: "complete" })
+        .where(eq(documents.id, input.documentId));
+
+      return { documentId: input.documentId, status: "complete" as const };
+    }),
 });
