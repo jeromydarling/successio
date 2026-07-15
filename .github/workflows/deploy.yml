@@ -53,8 +53,11 @@ jobs:
       # rather than blocking every deploy.
       - name: Apply D1 migrations
         run: |
+          # Diagnostic: shows which account + permission scopes the token in
+          # the CLOUDFLARE_API_TOKEN secret actually carries (7403 debugging).
+          npx wrangler whoami || true
           if ! npx wrangler d1 migrations apply successio-prod --remote; then
-            echo "::warning::D1 migrations could not be applied — the CLOUDFLARE_API_TOKEN likely lacks the 'D1: Edit' permission (Cloudflare dashboard → My Profile → API Tokens). Pending migrations must be applied manually until it's added."
+            echo "::warning::D1 migrations could not be applied — check the wrangler whoami output above for the token's actual account and permission scopes. Pending migrations must be applied manually until this is resolved."
           fi
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
