@@ -11,6 +11,7 @@ import { eq, and, asc } from "drizzle-orm";
 import { router, protectedProcedure } from "../trpc";
 import { organizations, orgMilestones, financials } from "@/db/schema";
 import { nanoid } from "@/lib/nanoid";
+import { dedupeFinancialsByYear } from "@/lib/financials";
 
 const categoryEnum = z.enum([
   "founding", "financial", "equipment", "people",
@@ -49,7 +50,7 @@ export const historyRouter = router({
         founded: org.founded,
         employees: org.employeeCount,
       },
-      revenueByYear: fins
+      revenueByYear: dedupeFinancialsByYear(fins)
         .filter((f) => f.revenue != null)
         .map((f) => ({ year: f.year, revenue: f.revenue as number })),
       milestones: milestones.map((m) => ({

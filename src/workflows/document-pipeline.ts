@@ -26,6 +26,7 @@ import { runEmbedding } from "@/server/workers/embed";
 import { recalculateScore } from "@/server/workers/score";
 import { getEmailSender } from "@/lib/email/sender";
 import { processingCompleteEmail } from "@/lib/email/templates";
+import { appUrl } from "@/lib/app-url";
 import type { DocumentJob } from "@/types";
 
 /** Document statuses that mean "still being worked on" (vs. a terminal state). */
@@ -198,7 +199,7 @@ export class DocumentPipeline extends WorkflowEntrypoint<PipelineEnv, DocumentJo
         )
         .get();
 
-      const base = env.APP_URL || "https://successio.pro";
+      const base = appUrl(env);
       const mail = processingCompleteEmail({
         name: owner.name,
         orgName: org?.name ?? "your business",

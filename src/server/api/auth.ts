@@ -19,10 +19,7 @@ import { getEmailSender } from "@/lib/email/sender";
 import { passwordResetEmail, verifyEmail } from "@/lib/email/templates";
 import { generateRawToken, hashToken, expiryFor, type TokenKind } from "@/lib/email/tokens";
 
-/** Base URL for links in emails. */
-function appUrl(env: { APP_URL?: string }): string {
-  return env.APP_URL || "https://successio.pro";
-}
+import { appUrl } from "@/lib/app-url";
 
 /** Best-effort KV rate limit keyed on hashed IP (+ optional identifier).
  *  Throws TOO_MANY_REQUESTS when the fixed window is exhausted. */

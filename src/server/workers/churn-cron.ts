@@ -17,6 +17,7 @@ import { eq, and, sql, isNull, isNotNull } from "drizzle-orm";
 import * as schema from "@/db/schema";
 import { getEmailSender } from "@/lib/email/sender";
 import { reEngagementEmail } from "@/lib/email/templates";
+import { appUrl } from "@/lib/app-url";
 
 export interface ChurnEnv {
   DB: D1Database;
@@ -31,7 +32,7 @@ export async function runChurnCron(env: ChurnEnv, ctx?: ExecutionContext): Promi
   const nowSec = Math.floor(Date.now() / 1000);
   const sevenDaysAgo = nowSec - 7 * 86400;
   const fourteenDaysAgo = nowSec - 14 * 86400;
-  const base = env.APP_URL ?? "https://successio.pro";
+  const base = appUrl(env);
   const sender = getEmailSender(env as Parameters<typeof getEmailSender>[0]);
 
   // Signal A: orgs where the most-recent session is > 7 days ago (or never).

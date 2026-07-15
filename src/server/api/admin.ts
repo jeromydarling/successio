@@ -20,6 +20,7 @@ import {
 import { signSession, makeSessionCookie } from "@/lib/auth";
 import { nanoid } from "@/lib/nanoid";
 import { getEmailSender } from "@/lib/email/sender";
+import { appUrl } from "@/lib/app-url";
 import { associationInviteEmail } from "@/lib/email/templates";
 
 type DB = DrizzleD1Database<typeof schema>;
@@ -275,7 +276,7 @@ export const adminRouter = router({
         .from(associations)
         .where(eq(associations.id, ctx.associationId))
         .get();
-      const base = ctx.env.APP_URL || "https://successio.pro";
+      const base = appUrl(ctx.env);
       const sender = getEmailSender(ctx.env);
       await Promise.all(
         created.map(async (c) => {

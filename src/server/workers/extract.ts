@@ -116,28 +116,34 @@ export async function runExtraction(params: ExtractionParams): Promise<void> {
 
   let parsed: ExtractionOutput;
 
-  try {
-    // Select the trade-specific extraction prompt for this org's vertical.
-    const { EXTRACTION_SYSTEM, buildExtractionPrompt } = getExtractPrompt(vertical);
-    const prompt = buildExtractionPrompt({ rawText: ocrText, vertical, orgName });
-    const result = await gateway.complete({
-      model: MODELS.extraction,
-      messages: [
-        { role: "system", content: EXTRACTION_SYSTEM },
-        { role: "user", content: prompt },
-      ],
-      max_tokens: 4096,
-      temperature: 0,
-    });
+  // Select the trade-specific extraction prompt for this org's vertical.
+  const { EXTRACTION_SYSTEM, buildExtractionPrompt } = getExtractPrompt(vertical);
+  const prompt = buildExtractionPrompt({ rawText: ocrText, vertical, orgName });
+  const messages = [
+    { role: "system" as const, content: EXTRACTION_SYSTEM },
+    { role: "user" as const, content: prompt },
+  ];
 
-    const raw = JSON.parse(extractJson(result.content));
-    parsed = extractionOutputSchema.parse(raw);
-  } catch (err) {
-    console.error("[extract] Parse/call failed, routing to review:", err);
-    await db.update(schema.documents)
-      .set({ status: "needs_review", errorMessage: String(err) })
-      .where(eq(schema.documents.id, documentId));
-    return;
+  const attempt = async (model: string): Promise<ExtractionOutput> => {
+    const result = await gateway.complete({ model, messages, max_tokens: 4096, temperature: 0 });
+    return extractionOutputSchema.parse(JSON.parse(extractJson(result.content)));
+  };
+
+  try {
+    parsed = await attempt(MODELS.extraction);
+  } catch (primaryErr) {
+    // Fallback chain: one more shot on the secondary model before giving up.
+    // Catches transient model failures AND malformed-JSON runs.
+    console.warn("[extract] primary model failed, trying fallback:", primaryErr);
+    try {
+      parsed = await attempt(MODELS.extraction_fb);
+    } catch (err) {
+      console.error("[extract] Parse/call failed on both models, routing to review:", err);
+      await db.update(schema.documents)
+        .set({ status: "needs_review", errorMessage: String(err) })
+        .where(eq(schema.documents.id, documentId));
+      return;
+    }
   }
 
   // Write document type if detected

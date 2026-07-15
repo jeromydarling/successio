@@ -24,6 +24,7 @@ import { extractJson } from "@/lib/json";
 import { buildProfilePrompt } from "@/prompts/manufacturing/profile";
 import { renderProfilePdf } from "@/lib/pdf";
 import { nanoid } from "@/lib/nanoid";
+import { dedupeFinancialsByYear } from "@/lib/financials";
 
 const SECTION_LABELS: Record<string, string> = {
   executive_summary:    "Executive Summary",
@@ -78,7 +79,7 @@ export const profilesRouter = router({
     const prompt = buildProfilePrompt({
       org,
       customers: custs.map(c => ({ name: c.name, revenueShare: c.revenueShare, contractStatus: c.contractStatus })),
-      financials: fins.map(f => ({ year: f.year, revenue: f.revenue, grossProfit: f.grossProfit, ebitda: f.ebitda, ownerCompensation: f.ownerCompensation })),
+      financials: dedupeFinancialsByYear(fins).map(f => ({ year: f.year, revenue: f.revenue, grossProfit: f.grossProfit, ebitda: f.ebitda, ownerCompensation: f.ownerCompensation })),
       employees: emps.map(e => ({ name: e.name, role: e.role, tenureYears: e.tenureYears, isKeyPerson: e.isKeyPerson ?? false })),
       processes: procs.map(p => ({ title: p.title, steps: p.steps })),
       equipment: equips.map(e => ({ name: e.name, manufacturer: e.manufacturer, yearInstalled: e.yearInstalled, estimatedValue: e.estimatedValue })),

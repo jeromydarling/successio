@@ -1,12 +1,13 @@
 /**
- * Typed Cloudflare AI Gateway client.
- * ALL AI calls go through this — never call provider APIs directly.
- * Routes through https://gateway.ai.cloudflare.com/v1/{accountId}/{gatewayId}/
+ * Typed AI client. ALL AI calls go through this — never call provider APIs
+ * directly from feature code.
  *
- * Configured with:
- *   - Semantic caching (24 hr) to cut costs on repeated extraction runs
- *   - 30-second timeout enforced at the gateway level
- *   - Automatic retry (3x) at the gateway level
+ * Current reality: every default model below is `@cf/*`, which runs on the
+ * native Workers AI binding (no gateway hop, no external keys). The
+ * gateway.ai.cloudflare.com path + provider request/response shaping only
+ * activates for `anthropic/*`, `google/*`, or `mistral/*` model ids once the
+ * corresponding API key secrets are provisioned. Gateway-level caching (the
+ * cf-aig-* headers) applies only to that external path.
  */
 
 export const MODELS = {
@@ -225,18 +226,30 @@ export class AIGateway {
 
   /** Run Whisper (Workers AI native — does not go through gateway). */
   async transcribeAudio(audioBytes: ArrayBuffer): Promise<string> {
-    const result = await (this.env.AI as any).run("@cf/openai/whisper", {
+    const result = (await (this.env.AI as any).run("@cf/openai/whisper", {
       audio: [...new Uint8Array(audioBytes)],
-    }) as { text: string };
+    })) as { text?: unknown };
+    // Validate the transport shape — garbage here would flow into SOPs and D1.
+    if (typeof result?.text !== "string") {
+      throw new Error("[ai-gateway] Whisper returned an unexpected shape");
+    }
     return result.text;
   }
 
   /** Generate embeddings via Workers AI (native, no gateway). */
   async embed(texts: string[]): Promise<number[][]> {
-    const result = await (this.env.AI as any).run("@cf/baai/bge-base-en-v1.5", {
+    const result = (await (this.env.AI as any).run("@cf/baai/bge-base-en-v1.5", {
       text: texts,
-    }) as { data: number[][] };
-    return result.data;
+    })) as { data?: unknown };
+    const data = result?.data;
+    const valid =
+      Array.isArray(data) &&
+      data.length === texts.length &&
+      data.every((v) => Array.isArray(v) && v.every((n) => typeof n === "number"));
+    if (!valid) {
+      throw new Error("[ai-gateway] embedding model returned an unexpected shape");
+    }
+    return data as number[][];
   }
 
   private providerFromModel(model: string): string {

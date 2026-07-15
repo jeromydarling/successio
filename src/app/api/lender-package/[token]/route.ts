@@ -15,6 +15,7 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import * as schema from "@/db/schema";
 import { nanoid } from "@/lib/nanoid";
 import { rateLimit, sha256Hex } from "@/lib/rate-limit";
+import { dedupeFinancialsByYear } from "@/lib/financials";
 
 interface LenderEnv {
   DB: D1Database;
@@ -120,7 +121,7 @@ export async function GET(
     profile: (() => {
       try { return JSON.parse(profile?.content ?? "{}"); } catch { return null; }
     })(),
-    financials: fins,
+    financials: dedupeFinancialsByYear(fins),
     customers: custs,
     employees: emps,
     equipment: equips,

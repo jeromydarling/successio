@@ -607,17 +607,28 @@ Always fetch live docs before implementing integrations (do not rely on training
 > **This section is the canonical home for all API keys and secrets — keep it at the very end of this file.**
 > **NEVER paste real secret values here.** This table is the *registry* (what exists, where it lives, who issues it). Real values live only in `.dev.vars` (local, gitignored) and Cloudflare encrypted secrets (production via `wrangler secret put <NAME>`). The app must fail loudly if any required key is missing — never hardcode a fallback.
 
+> **Current AI reality (vs. the model table above):** all inference runs on
+> Workers AI (Llama for extraction/vision, Whisper for audio, bge embeddings)
+> via `src/lib/ai-gateway.ts`. Scanned-PDF OCR uses Browser Rendering
+> (rasterize → vision). The external-provider keys below activate the
+> Claude/Mistral/Gemini routing described earlier — none are wired in yet.
+
 | Key | Purpose | Where set (local → prod) | Issuer / Console | Status |
 |---|---|---|---|---|
-| `ANTHROPIC_API_KEY` | Claude extraction + profile drafting (via AI Gateway) | `.dev.vars` → `wrangler secret` | console.anthropic.com | ⬜ not set |
-| `MISTRAL_API_KEY` | Primary OCR for scanned docs | `.dev.vars` → `wrangler secret` | console.mistral.ai | ⬜ not set |
+| `ANTHROPIC_API_KEY` | Claude extraction + profile drafting (via AI Gateway) | `.dev.vars` → `wrangler secret` | console.anthropic.com | ⬜ not set (Workers AI Llama in use) |
+| `MISTRAL_API_KEY` | Mistral OCR for scanned docs | `.dev.vars` → `wrangler secret` | console.mistral.ai | ⬜ not set (Browser Rendering OCR in use) |
 | `GOOGLE_AI_API_KEY` | Gemini 2.5 Flash OCR/extraction fallback | `.dev.vars` → `wrangler secret` | aistudio.google.com | ⬜ not set |
-| `CF_ACCOUNT_ID` | Cloudflare account scope for AI Gateway | `.dev.vars` → `[vars]` / dashboard | dash.cloudflare.com | ⬜ not set |
+| `CF_ACCOUNT_ID` | Cloudflare account scope for AI Gateway | `wrangler.toml [vars]` | dash.cloudflare.com | ✅ set in `[vars]` |
 | `CF_AI_GATEWAY_ID` | AI Gateway id (`successio-prod`) | `wrangler.toml [vars]` | dash.cloudflare.com → AI Gateway | ✅ `successio-prod` |
-| `JWT_SECRET` | Signs/validates user session JWTs (Workers KV) | `.dev.vars` → `wrangler secret` | self-generated (`openssl rand -hex 32`) | ⬜ not set |
-| `ENCRYPTION_KEY` | Encrypts PII fields at rest in D1 | `.dev.vars` → `wrangler secret` | self-generated (`openssl rand -hex 32`) | ⬜ not set |
-| `R2_ACCESS_KEY_ID` | R2 S3-API key id for presigned upload/download URLs | `.dev.vars` → `wrangler secret` | dash.cloudflare.com → R2 → Manage API tokens | ⬜ not set |
-| `R2_SECRET_ACCESS_KEY` | R2 S3-API secret for presigned upload/download URLs | `.dev.vars` → `wrangler secret` | dash.cloudflare.com → R2 → Manage API tokens | ⬜ not set |
+| `JWT_SECRET` | Signs/validates user session JWTs | GitHub repo secret → synced by deploy.yml | self-generated (`openssl rand -hex 32`) | ✅ synced on every deploy |
+| `SUPER_ADMIN_TOKEN` | Password for the `/superadmin` CRM | GitHub repo secret → synced by deploy.yml | self-generated (`openssl rand -hex 32`) | ⬜ add GitHub repo secret |
+| `E2E_ADMIN_TOKEN` | Gates the E2E seed/purge endpoints (fail-closed) | GitHub repo secret → synced by deploy.yml | self-generated (`openssl rand -hex 32`) | ⬜ add GitHub repo secret |
+| `ENCRYPTION_KEY` | Encrypts PII fields at rest in D1 (future) | `.dev.vars` → `wrangler secret` | self-generated (`openssl rand -hex 32`) | ⬜ not set |
+| `SENTRY_DSN` | Worker error reporting (`withSentry`) | Cloudflare dashboard secret | sentry.io | ✅ set via dashboard |
+
+> `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` were removed from the registry:
+> uploads/downloads go through the R2 **binding** (`POST /api/upload` streams
+> bytes via the Worker), so S3-style credentials are not used anywhere.
 
 **Conventions**
 - New keys get added to this table **and** to `.dev.vars.example`. Update the **Status** column when a key is provisioned.
