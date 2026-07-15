@@ -66,6 +66,15 @@ binding = "DOCUMENT_QUEUE"
 queue = "document-jobs"
 max_batch_size = 10
 max_retries = 3
+dead_letter_queue = "document-jobs-dlq"
+
+# Dead-letter consumer: jobs that exhausted retries land here and are marked
+# failed in D1, so the vault shows "processing failed — retry" instead of a
+# document stuck on "queued" forever.
+[[queues.consumers]]
+queue = "document-jobs-dlq"
+max_batch_size = 10
+max_retries = 1
 
 [ai]
 binding = "AI"

@@ -1,8 +1,8 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
-import { router, publicProcedure, protectedProcedure } from "../trpc";
-import { users, organizations, associationInvites, authTokens } from "@/db/schema";
+import { router, publicProcedure, protectedProcedure, type Context } from "../trpc";
+import { users, organizations, associationInvites, authTokens, sessions } from "@/db/schema";
 import {
   hashPassword,
   verifyPassword,
@@ -10,7 +10,9 @@ import {
   makeSessionCookie,
   clearSessionCookie,
   revokeSession,
+  revokeAllUserSessions,
 } from "@/lib/auth";
+import { rateLimit, sha256Hex } from "@/lib/rate-limit";
 import { signupSchema, loginSchema } from "@/types";
 import { nanoid } from "@/lib/nanoid";
 import { getEmailSender } from "@/lib/email/sender";
@@ -20,6 +22,41 @@ import { generateRawToken, hashToken, expiryFor, type TokenKind } from "@/lib/em
 /** Base URL for links in emails. */
 function appUrl(env: { APP_URL?: string }): string {
   return env.APP_URL || "https://successio.pro";
+}
+
+/** Best-effort KV rate limit keyed on hashed IP (+ optional identifier).
+ *  Throws TOO_MANY_REQUESTS when the fixed window is exhausted. */
+async function guardRate(
+  ctx: Context,
+  bucket: string,
+  id: string,
+  limit: number,
+  windowSeconds: number
+): Promise<void> {
+  if (!ctx.env.SESSIONS) return; // no KV bound (local dev) — skip
+  const ip = ctx.req.headers.get("cf-connecting-ip") ?? "unknown";
+  const key = `${bucket}:${await sha256Hex(`${ip}:${id}`)}`;
+  const { allowed } = await rateLimit(ctx.env.SESSIONS, key, limit, windowSeconds);
+  if (!allowed) {
+    throw new TRPCError({
+      code: "TOO_MANY_REQUESTS",
+      message: "Too many attempts — please wait a few minutes and try again.",
+    });
+  }
+}
+
+/** Record a login event. Powers "last login" in the CRM and the churn cron's
+ *  inactivity signal. Best-effort — a failed insert never blocks sign-in. */
+async function recordLogin(ctx: Context, userId: string): Promise<void> {
+  try {
+    await ctx.db.insert(sessions).values({
+      id: nanoid(),
+      userId,
+      expiresAt: new Date(Date.now() + 30 * 86400 * 1000),
+    });
+  } catch (err) {
+    console.error("[auth] failed to record login:", err);
+  }
 }
 
 /** Issue a single-use token for a user+kind, returning the raw token. */
@@ -43,6 +80,8 @@ export const authRouter = router({
   signup: publicProcedure
     .input(signupSchema)
     .mutation(async ({ input, ctx }) => {
+      await guardRate(ctx, "signup", "", 10, 3600); // 10 signups/hour per IP
+
       const existing = await ctx.db
         .select({ id: users.id })
         .from(users)
@@ -112,6 +151,7 @@ export const authRouter = router({
       const isSecure = ctx.env.ENVIRONMENT === "production";
       const cookie = makeSessionCookie(token, isSecure);
       ctx.resHeaders.append("Set-Cookie", cookie);
+      await recordLogin(ctx, userId);
 
       // Send an email-verification link (best-effort — don't block signup).
       // Skipped entirely when verification is off, since the user is already
@@ -133,6 +173,9 @@ export const authRouter = router({
   login: publicProcedure
     .input(loginSchema)
     .mutation(async ({ input, ctx }) => {
+      // 10 attempts per 5 minutes per IP+email — blunts credential stuffing.
+      await guardRate(ctx, "login", input.email.toLowerCase(), 10, 300);
+
       const user = await ctx.db
         .select()
         .from(users)
@@ -155,6 +198,7 @@ export const authRouter = router({
       const isSecure = ctx.env.ENVIRONMENT === "production";
       const cookie = makeSessionCookie(token, isSecure);
       ctx.resHeaders.append("Set-Cookie", cookie);
+      await recordLogin(ctx, user.id);
 
       return { userId: user.id, orgId: user.orgId, cookie };
     }),
@@ -182,8 +226,10 @@ export const authRouter = router({
         throw new TRPCError({ code: "NOT_FOUND", message: "Demo is not available right now." });
       }
 
+      // demo: true → every mutation is rejected by protectedProcedure, so the
+      // demo personas are enforced read-only server-side, not by convention.
       const token = await signSession(
-        { sub: user.id, orgId: user.orgId, email: user.email, role: user.role },
+        { sub: user.id, orgId: user.orgId, email: user.email, role: user.role, demo: true },
         ctx.env.JWT_SECRET
       );
       const isSecure = ctx.env.ENVIRONMENT === "production";
@@ -207,6 +253,9 @@ export const authRouter = router({
   requestPasswordReset: publicProcedure
     .input(z.object({ email: z.string().email() }))
     .mutation(async ({ input, ctx }) => {
+      // 3 requests per 15 minutes per IP+email — stops reset-email bombing.
+      await guardRate(ctx, "pwreset", input.email.toLowerCase(), 3, 900);
+
       const user = await ctx.db
         .select({ id: users.id, name: users.name, email: users.email })
         .from(users)
@@ -252,6 +301,12 @@ export const authRouter = router({
         .update(authTokens)
         .set({ usedAt: new Date() })
         .where(and(eq(authTokens.userId, row.userId), eq(authTokens.kind, "password_reset")));
+
+      // Kill every session issued before this moment — a hijacker's stolen
+      // 30-day JWT must not survive the owner resetting their password.
+      if (ctx.env.SESSIONS) {
+        await revokeAllUserSessions(ctx.env.SESSIONS, row.userId);
+      }
 
       return { ok: true };
     }),

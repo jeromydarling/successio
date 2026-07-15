@@ -52,6 +52,24 @@ interface PipelineEnv {
 
 export class DocumentPipeline extends WorkflowEntrypoint<PipelineEnv, DocumentJob> {
   async run(event: WorkflowEvent<DocumentJob>, step: WorkflowStep) {
+    // If any step exhausts its retries, the whole run fails — without this
+    // handler the document would be stranded in an in-flight status forever.
+    // Mark it failed so the vault can offer a retry, then rethrow so the
+    // workflow run itself is recorded as errored.
+    try {
+      await this.pipeline(event, step);
+    } catch (err) {
+      const db = drizzle(this.env.DB, { schema });
+      const msg = err instanceof Error ? err.message : "Processing failed";
+      await db
+        .update(schema.documents)
+        .set({ status: "failed", errorMessage: msg.slice(0, 500) })
+        .where(eq(schema.documents.id, event.payload.documentId));
+      throw err;
+    }
+  }
+
+  private async pipeline(event: WorkflowEvent<DocumentJob>, step: WorkflowStep) {
     const { documentId, orgId, r2Key, mimeType, vertical } = event.payload;
     const env = this.env;
     const db = drizzle(env.DB, { schema });

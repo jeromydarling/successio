@@ -8,6 +8,7 @@ const sessionPayloadSchema = z.object({
   orgId: z.string(),
   email: z.string().email(),
   role: z.string(),
+  demo: z.boolean().optional(), // demo persona — mutations are blocked
   jti: z.string().optional(), // token id — used for KV revocation
   iat: z.number().optional(),
   exp: z.number().optional(),
@@ -53,6 +54,30 @@ export async function isSessionRevoked(
 ): Promise<boolean> {
   const hit = await kv.get(`${REVOKED_PREFIX}${jti}`);
   return hit !== null;
+}
+
+/** KV key prefix for per-user issued-at cutoffs (password reset, forced sign-out). */
+const USER_CUTOFF_PREFIX = "userrev:";
+
+/** Revoke ALL of a user's outstanding sessions by recording an issued-at
+ *  cutoff — any JWT issued before this moment is rejected on the next request.
+ *  Used after a password reset so a hijacked session can't outlive it. */
+export async function revokeAllUserSessions(
+  kv: KVNamespace,
+  userId: string
+): Promise<void> {
+  await kv.put(`${USER_CUTOFF_PREFIX}${userId}`, String(Math.floor(Date.now() / 1000)), {
+    expirationTtl: SESSION_DURATION_SECONDS,
+  });
+}
+
+/** Issued-at cutoff (unix seconds) for a user, or null if none recorded. */
+export async function getUserSessionCutoff(
+  kv: KVNamespace,
+  userId: string
+): Promise<number | null> {
+  const v = await kv.get(`${USER_CUTOFF_PREFIX}${userId}`);
+  return v ? parseInt(v, 10) || null : null;
 }
 
 export async function verifySession(

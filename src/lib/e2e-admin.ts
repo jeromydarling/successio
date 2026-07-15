@@ -1,13 +1,11 @@
 /**
  * Shared guard for the token-protected E2E admin endpoints (purge, seed).
  *
- * Both endpoints are gated two ways: a token (env secret or known CI fallback)
- * AND an "e2e+" email allowlist, so even with the fallback token they can only
- * ever touch throwaway test accounts — never a real customer.
+ * Both endpoints are gated two ways: the E2E_ADMIN_TOKEN secret AND an "e2e+"
+ * email allowlist, so they can only ever touch throwaway test accounts —
+ * never a real customer. If the secret is not configured, the endpoints are
+ * disabled entirely (403) — there is deliberately no fallback token.
  */
-
-/** Known fallback so CI can run without provisioning a Cloudflare secret. */
-export const E2E_FALLBACK_TOKEN = "successio-e2e-purge-2026";
 
 /** Only test accounts (e2e+...) are ever eligible. */
 const E2E_EMAIL = /^e2e\+/i;
@@ -37,8 +35,11 @@ export function checkE2eAuth(
   token: string,
   email: string
 ): { ok: true } | { ok: false; status: number; error: string } {
-  const expected = envToken || E2E_FALLBACK_TOKEN;
-  if (!token || !timingSafeEqual(token, expected)) {
+  // No secret configured → the E2E endpoints are off. Fail closed.
+  if (!envToken) {
+    return { ok: false, status: 403, error: "E2E endpoints are not enabled" };
+  }
+  if (!token || !timingSafeEqual(token, envToken)) {
     return { ok: false, status: 403, error: "Forbidden" };
   }
   if (!E2E_EMAIL.test(email)) {

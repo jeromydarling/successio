@@ -2,7 +2,7 @@
 
 import { useState, useDeferredValue } from "react";
 import { motion } from "framer-motion";
-import { Search, FileText, FileSpreadsheet, FileAudio, Image, File, Sparkles } from "lucide-react";
+import { Search, FileText, FileSpreadsheet, FileAudio, Image, File, Sparkles, RotateCw } from "lucide-react";
 import { AppTopNav } from "@/components/app/app-topnav";
 import { DocumentSlideOver } from "@/components/vault/document-slide-over";
 import { trpc } from "@/lib/trpc-client";
@@ -40,7 +40,11 @@ export default function VaultPage() {
   const deferredSearch = useDeferredValue(search);
   const isSemanticSearch = deferredSearch.length >= 3;
 
+  const utils = trpc.useUtils();
   const { data: allDocs = [], isLoading: allLoading } = trpc.documents.list.useQuery({ limit: 100 });
+  const retryDoc = trpc.documents.retry.useMutation({
+    onSettled: () => utils.documents.list.invalidate(),
+  });
   const { data: semanticResults = [], isFetching: semanticLoading } = trpc.documents.semanticSearch.useQuery(
     { query: deferredSearch },
     { enabled: isSemanticSearch }
@@ -155,11 +159,23 @@ export default function VaultPage() {
                     </p>
                     <div className="mt-2 flex items-center justify-between">
                       <StatusPill status={doc.status} />
-                      {doc.ocrConfidence != null && (
+                      {doc.status === "failed" ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            retryDoc.mutate({ documentId: doc.id });
+                          }}
+                          disabled={retryDoc.isPending}
+                          className="flex items-center gap-1 rounded-full border border-red-500/30 px-2 py-0.5 text-[10px] font-medium text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-50"
+                        >
+                          <RotateCw className={cn("size-2.5", retryDoc.isPending && "animate-spin")} />
+                          Retry
+                        </button>
+                      ) : doc.ocrConfidence != null ? (
                         <span className="font-mono text-[11px] text-ink-faint">
                           {Math.round(doc.ocrConfidence * 100)}%
                         </span>
-                      )}
+                      ) : null}
                     </div>
                   </motion.article>
                 );

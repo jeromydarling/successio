@@ -21,7 +21,7 @@ const EMAIL = `e2e+upload-${TS}@successio.pro`;
 const PASSWORD = "Successio-E2E-Pass-1";
 const NAME = "E2E Upload User";
 const BUSINESS = `E2E Upload Shop ${TS}`;
-const TOKEN = process.env.E2E_ADMIN_TOKEN || "successio-e2e-purge-2026";
+const TOKEN = process.env.E2E_ADMIN_TOKEN ?? "";
 const FILE = `e2e-customers-${TS}.csv`;
 
 const TERMINAL = /complete|needs|failed/;

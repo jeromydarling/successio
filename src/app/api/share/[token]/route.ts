@@ -14,9 +14,19 @@
 import { drizzle } from "drizzle-orm/d1";
 import { eq, sql } from "drizzle-orm";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { z } from "zod";
 import * as schema from "@/db/schema";
 import { nanoid } from "@/lib/nanoid";
 import { rateLimit, sha256Hex } from "@/lib/rate-limit";
+import { filterByTier } from "@/lib/share-tier";
+
+/** NDA-gate submission. Everything a visitor sends is length-capped and typed
+ *  before it touches the audit log. */
+const ndaBodySchema = z.object({
+  name: z.string().trim().min(1).max(200).optional(),
+  email: z.string().trim().email().max(320).optional(),
+  durationSeconds: z.number().int().min(0).max(86_400).optional(),
+});
 
 interface ShareEnv {
   DB: D1Database;
@@ -144,8 +154,20 @@ export async function POST(
     return Response.json({ error: "This link has expired" }, { status: 410 });
   }
 
-  let body: { name?: string; email?: string; durationSeconds?: number } = {};
-  try { body = await req.json(); } catch { /* ignore */ }
+  // POST is what actually releases the confidential payload, so the view cap
+  // must be enforced here too — not only on the initial GET.
+  if (shareToken.maxViews && shareToken.viewCount >= shareToken.maxViews) {
+    return Response.json({ error: "View limit reached" }, { status: 410 });
+  }
+
+  let body: z.infer<typeof ndaBodySchema> = {};
+  try {
+    const parsed = ndaBodySchema.safeParse(await req.json());
+    if (!parsed.success) {
+      return Response.json({ error: "Invalid submission" }, { status: 400 });
+    }
+    body = parsed.data;
+  } catch { /* no JSON body — treated as an empty submission below */ }
 
   const isPublic = shareToken.tier === "public";
   const ndaSatisfied = Boolean(body.name && body.email);
@@ -204,14 +226,4 @@ export async function POST(
     },
     profile: filterByTier(content, shareToken.tier),
   });
-}
-
-function filterByTier(content: Record<string, string>, tier: string): Record<string, string> {
-  const publicKeys = ["executive_summary", "business_overview", "opportunity"];
-  const ndaKeys = [...publicKeys, "customer_overview", "financial_highlights", "operations", "team", "equipment_and_assets", "reason_for_sale"];
-
-  const allowed = tier === "public" ? publicKeys : ndaKeys; // lender/buyer get everything in ndaKeys
-  return Object.fromEntries(
-    Object.entries(content).filter(([k]) => allowed.includes(k))
-  );
 }

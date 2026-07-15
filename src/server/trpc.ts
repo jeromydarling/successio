@@ -1,6 +1,11 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { verifySession, getTokenFromCookie, isSessionRevoked } from "@/lib/auth";
+import {
+  verifySession,
+  getTokenFromCookie,
+  isSessionRevoked,
+  getUserSessionCutoff,
+} from "@/lib/auth";
 import type { SessionPayload } from "@/lib/auth";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import type * as schema from "@/db/schema";
@@ -51,10 +56,18 @@ const t = initTRPC.context<Context>().create();
 export const router = t.router;
 export const publicProcedure = t.procedure;
 
-/** Throws 401 if no valid session cookie is present. */
-export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
+/** Throws 401 if no valid session cookie is present.
+ *  Demo sessions are browse-only: every mutation is blocked so a demo visitor
+ *  can never alter data, send email, or burn AI compute. */
+export const protectedProcedure = t.procedure.use(async ({ ctx, type, next }) => {
   if (!ctx.session) {
     throw new TRPCError({ code: "UNAUTHORIZED", message: "Not signed in" });
+  }
+  if (ctx.session.demo && type === "mutation") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "The demo is read-only — sign up for a free account to make changes.",
+    });
   }
   return next({ ctx: { ...ctx, session: ctx.session } });
 });
@@ -90,6 +103,15 @@ export async function createContext(
   // Honour KV revocation list (logout / forced sign-out) when available.
   if (session?.jti && env.SESSIONS) {
     if (await isSessionRevoked(env.SESSIONS, session.jti)) {
+      session = null;
+    }
+  }
+
+  // Honour the per-user issued-at cutoff (set on password reset): any token
+  // issued before the cutoff is dead, so old sessions can't outlive a reset.
+  if (session?.iat && env.SESSIONS) {
+    const cutoff = await getUserSessionCutoff(env.SESSIONS, session.sub);
+    if (cutoff !== null && session.iat < cutoff) {
       session = null;
     }
   }

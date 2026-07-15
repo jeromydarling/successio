@@ -1,22 +1,39 @@
 /**
  * POST /api/superadmin/login
  * Validates the SUPER_ADMIN_TOKEN and sets an HttpOnly sa_token cookie.
+ * Rate-limited per IP so the token can't be brute-forced.
  */
 
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { timingSafeEqual } from "@/lib/timing-safe-equal";
+import { rateLimit, sha256Hex } from "@/lib/rate-limit";
 
 export async function POST(req: Request): Promise<Response> {
   let expectedToken: string | undefined;
+  let kv: KVNamespace | undefined;
   try {
     const ctx = await getCloudflareContext();
-    expectedToken = (ctx.env as { SUPER_ADMIN_TOKEN?: string }).SUPER_ADMIN_TOKEN;
+    const env = ctx.env as { SUPER_ADMIN_TOKEN?: string; SESSIONS?: KVNamespace };
+    expectedToken = env.SUPER_ADMIN_TOKEN;
+    kv = env.SESSIONS;
   } catch {
     expectedToken = process.env.SUPER_ADMIN_TOKEN;
   }
 
   if (!expectedToken) {
     return Response.json({ ok: false, error: "Super admin not configured" }, { status: 503 });
+  }
+
+  // 5 attempts per 5 minutes per IP.
+  if (kv) {
+    const ip =
+      req.headers.get("cf-connecting-ip") ??
+      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+      "unknown";
+    const { allowed } = await rateLimit(kv, `sa-login:${await sha256Hex(ip)}`, 5, 300);
+    if (!allowed) {
+      return Response.json({ ok: false, error: "Too many attempts — wait a few minutes" }, { status: 429 });
+    }
   }
 
   let token = "";

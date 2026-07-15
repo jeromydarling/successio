@@ -86,6 +86,60 @@ export const documentsRouter = router({
       return { documentId: doc.id, fileType, status: "queued" as const };
     }),
 
+  /** Requeue a document whose processing failed (or has been stuck in an
+   *  in-flight status long enough that the pipeline clearly died). */
+  retry: protectedProcedure
+    .input(z.object({ documentId: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const { orgId } = ctx.session;
+
+      const doc = await ctx.db
+        .select()
+        .from(documents)
+        .where(and(eq(documents.id, input.documentId), eq(documents.orgId, orgId)))
+        .get();
+
+      if (!doc) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Document not found" });
+      }
+
+      const STUCK_AFTER_MS = 15 * 60 * 1000;
+      const inFlight = ["queued", "ocr", "extracting", "embedding"].includes(doc.status);
+      const stuck =
+        inFlight && doc.createdAt && Date.now() - doc.createdAt.getTime() > STUCK_AFTER_MS;
+
+      if (doc.status !== "failed" && !stuck) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "This document is still processing — retry is only available once it fails or stalls.",
+        });
+      }
+
+      await ctx.db
+        .update(documents)
+        .set({ status: "queued", errorMessage: null })
+        .where(eq(documents.id, input.documentId));
+
+      if (ctx.env.DOCUMENT_QUEUE) {
+        const org = await ctx.db
+          .select({ vertical: organizations.vertical })
+          .from(organizations)
+          .where(eq(organizations.id, orgId))
+          .get();
+
+        const job = documentJobSchema.parse({
+          documentId: doc.id,
+          orgId,
+          r2Key: doc.r2Key,
+          mimeType: doc.mimeType,
+          vertical: (org?.vertical ?? "manufacturing") as Vertical,
+        });
+        await ctx.env.DOCUMENT_QUEUE.send(job);
+      }
+
+      return { documentId: doc.id, status: "queued" as const };
+    }),
+
   list: protectedProcedure
     .input(
       z.object({

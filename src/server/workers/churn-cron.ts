@@ -92,6 +92,7 @@ export async function runChurnCron(env: ChurnEnv, ctx?: ExecutionContext): Promi
       name: schema.users.name,
       orgName: schema.organizations.name,
       churnEmailSentAt: schema.organizations.churnEmailSentAt,
+      orgCreatedAt: schema.organizations.createdAt,
     })
     .from(schema.users)
     .innerJoin(schema.organizations, eq(schema.users.orgId, schema.organizations.id))
@@ -102,10 +103,14 @@ export async function runChurnCron(env: ChurnEnv, ctx?: ExecutionContext): Promi
   const sevenDaysAgoMs = sevenDaysAgo * 1000;
 
   for (const owner of owners) {
-    const { orgId, email, name, orgName, churnEmailSentAt } = owner;
+    const { orgId, email, name, orgName, churnEmailSentAt, orgCreatedAt } = owner;
 
     // Skip demo orgs.
     if (orgId.startsWith("demo-")) continue;
+
+    // Skip orgs less than 14 days old — brand-new customers get onboarding,
+    // not churn nags, and their login history hasn't accumulated yet.
+    if (orgCreatedAt && orgCreatedAt.getTime() > nowSec * 1000 - 14 * 86400 * 1000) continue;
 
     const score =
       (signalA.has(orgId) ? 1 : 0) +

@@ -32,7 +32,7 @@ npx playwright test --list  # parse-check specs without running a browser
 | Var | Default | Purpose |
 |---|---|---|
 | `BASE_URL` | `https://successio.pro` | Target site for all specs. |
-| `E2E_ADMIN_TOKEN` | `successio-e2e-purge-2026` (fallback) | Token for the cleanup endpoint. Matches the server fallback so CI works without provisioning a secret; set a repo secret of the same name to override. |
+| `E2E_ADMIN_TOKEN` | (none — required) | Token for the seed/purge endpoints. Must match the Worker secret of the same name (deploy.yml syncs it from the repo secret). With no token, the endpoints are disabled. |
 | `EMAIL_VERIFICATION` | *(unset = off)* | **Server-side** flag. When not `"on"`, signup creates already-verified users and skips the confirm email, so the journey never depends on an email link. **To re-enable real email verification, set `EMAIL_VERIFICATION=on` in the Worker env — that one variable is the only change needed.** |
 
 ## How cleanup works

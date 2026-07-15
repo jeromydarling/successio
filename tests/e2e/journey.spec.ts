@@ -21,7 +21,7 @@ const BUSINESS = `E2E Test Shop ${TS}`;
 const LOCATION = `E2E City ${TS}`;
 const MILESTONE = `E2E Milestone ${TS}`;
 
-const TOKEN = process.env.E2E_ADMIN_TOKEN || "successio-e2e-purge-2026";
+const TOKEN = process.env.E2E_ADMIN_TOKEN ?? "";
 
 let page: Page;
 let publicToken = "";
