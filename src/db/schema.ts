@@ -374,6 +374,32 @@ export const shareTokens = sqliteTable(
   ]
 );
 
+// Buyer-tier visitors can ask the owner for specific documents; the owner
+// resolves each request from the Deal Room (human-in-the-loop by design —
+// nothing is auto-released).
+export const documentRequests = sqliteTable(
+  "document_requests",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    tokenId: text("token_id")
+      .notNull()
+      .references(() => shareTokens.id, { onDelete: "cascade" }),
+    requesterName: text("requester_name").notNull(),
+    requesterEmail: text("requester_email").notNull(),
+    requestText: text("request_text").notNull(),
+    status: text("status").notNull().default("pending"), // pending | fulfilled | declined
+    resolvedAt: integer("resolved_at", { mode: "timestamp" }),
+    ...timestamps,
+  },
+  (t) => [
+    index("doc_requests_org_idx").on(t.orgId),
+    index("doc_requests_token_idx").on(t.tokenId),
+  ]
+);
+
 export const shareViews = sqliteTable(
   "share_views",
   {

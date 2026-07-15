@@ -60,19 +60,30 @@ export async function runOcr(params: {
     return { text: decoded, confidence: 0.55, model: "text-extract" };
   }
 
-  // Likely a scanned PDF with no text layer. If Browser Rendering is available,
-  // rasterize pages and OCR each with the vision model; otherwise flag for review.
-  if (mime.includes("pdf") && browser) {
-    const pages = await rasterizePdf(browser, bytes);
-    if (pages.length > 0) {
-      const transcripts: string[] = [];
-      for (const png of pages) {
-        const t = (await gateway.ocrImage(png)).trim();
-        if (t) transcripts.push(t);
-      }
-      const joined = transcripts.join("\n\n").trim();
-      if (joined.length > 10) {
-        return { text: joined, confidence: 0.7, model: "browser-raster+vision", pageCount: pages.length };
+  // Likely a scanned PDF with no text layer.
+  if (mime.includes("pdf")) {
+    // Primary (when MISTRAL_API_KEY is provisioned): Mistral Document AI —
+    // purpose-built OCR, ~95% accuracy on printed docs. Returns null when the
+    // key isn't set or the call fails, so the raster path below still runs.
+    const mistralText = await gateway.ocrPdfMistral(bytes);
+    if (mistralText && mistralText.length > 10) {
+      return { text: mistralText, confidence: 0.9, model: "mistral-ocr" };
+    }
+
+    // Fallback: Browser Rendering — rasterize pages, OCR each with the vision
+    // model. Skipped when the BROWSER binding is absent.
+    if (browser) {
+      const pages = await rasterizePdf(browser, bytes);
+      if (pages.length > 0) {
+        const transcripts: string[] = [];
+        for (const png of pages) {
+          const t = (await gateway.ocrImage(png)).trim();
+          if (t) transcripts.push(t);
+        }
+        const joined = transcripts.join("\n\n").trim();
+        if (joined.length > 10) {
+          return { text: joined, confidence: 0.7, model: "browser-raster+vision", pageCount: pages.length };
+        }
       }
     }
   }

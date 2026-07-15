@@ -24,6 +24,26 @@ export const MODELS = {
 
 export type ModelKey = keyof typeof MODELS;
 
+/**
+ * Key-aware model routing: the spec's external stack (Claude for extraction
+ * and profile drafting, Gemini as extraction fallback) lights up automatically
+ * per-provider the moment its API key secret is provisioned — with the
+ * Workers AI models as the always-available default. No code changes needed
+ * when a key is added; the deploy workflow syncs keys from GitHub secrets.
+ */
+export function modelsFor(env: {
+  ANTHROPIC_API_KEY?: string;
+  GOOGLE_AI_API_KEY?: string;
+  MISTRAL_API_KEY?: string;
+}): Record<ModelKey, string> {
+  return {
+    ...MODELS,
+    extraction:    env.ANTHROPIC_API_KEY ? "anthropic/claude-sonnet-5" : MODELS.extraction,
+    profile_draft: env.ANTHROPIC_API_KEY ? "anthropic/claude-sonnet-5" : MODELS.profile_draft,
+    extraction_fb: env.GOOGLE_AI_API_KEY ? "google/gemini-2.5-flash"   : MODELS.extraction_fb,
+  };
+}
+
 interface GatewayRequestOptions {
   model: string;
   messages: { role: "system" | "user" | "assistant"; content: string }[];
@@ -63,20 +83,21 @@ export class AIGateway {
     if (!this.accountId) {
       throw new Error("[ai-gateway] CF_ACCOUNT_ID required for external provider calls");
     }
-    const url = `${this.baseUrl}/${provider}`;
 
     const apiKey = this.apiKeyForProvider(provider);
     if (!apiKey) {
       throw new Error(`[ai-gateway] No API key for provider: ${provider}`);
     }
 
+    const modelName = opts.model.replace(/^[^/]+\//, "");
+    const url = this.endpointFor(provider, modelName);
     const body = this.buildRequestBody(provider, opts);
 
     const res = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+        ...this.authHeadersFor(provider, apiKey),
         // Gateway caching header
         "cf-aig-cache-ttl": "86400",
         "cf-aig-skip-cache": "false",
@@ -92,6 +113,64 @@ export class AIGateway {
 
     const data = await res.json() as any;
     return this.parseResponse(provider, data);
+  }
+
+  /** Provider-native endpoint behind the gateway (the gateway proxies the
+   *  provider's real API, so the provider's own path must be appended). */
+  private endpointFor(provider: string, modelName: string): string {
+    switch (provider) {
+      case "anthropic":        return `${this.baseUrl}/anthropic/v1/messages`;
+      case "google-ai-studio": return `${this.baseUrl}/google-ai-studio/v1/models/${modelName}:generateContent`;
+      case "mistral":          return `${this.baseUrl}/mistral/v1/chat/completions`;
+      default:                 throw new Error(`[ai-gateway] no endpoint for provider: ${provider}`);
+    }
+  }
+
+  /** Each provider expects its own auth header scheme. */
+  private authHeadersFor(provider: string, apiKey: string): Record<string, string> {
+    switch (provider) {
+      case "anthropic":        return { "x-api-key": apiKey, "anthropic-version": "2023-06-01" };
+      case "google-ai-studio": return { "x-goog-api-key": apiKey };
+      default:                 return { Authorization: `Bearer ${apiKey}` };
+    }
+  }
+
+  /**
+   * OCR a scanned PDF with Mistral's dedicated Document AI endpoint (via the
+   * gateway). Returns null when the key isn't provisioned — the caller falls
+   * back to Browser Rendering rasterization. ~$1 per 1,000 pages.
+   */
+  async ocrPdfMistral(bytes: ArrayBuffer): Promise<string | null> {
+    if (!this.env.MISTRAL_API_KEY || !this.accountId) return null;
+    try {
+      const b64 = arrayBufferToBase64(bytes);
+      const res = await fetch(`${this.baseUrl}/mistral/v1/ocr`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.env.MISTRAL_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "mistral-ocr-latest",
+          document: { type: "document_url", document_url: `data:application/pdf;base64,${b64}` },
+        }),
+        signal: AbortSignal.timeout(60_000),
+      });
+      if (!res.ok) {
+        console.warn(`[ai-gateway] mistral OCR ${res.status}: ${await res.text().catch(() => "")}`);
+        return null;
+      }
+      const data = (await res.json()) as { pages?: { markdown?: string }[] };
+      const text = (data.pages ?? [])
+        .map((p) => p.markdown ?? "")
+        .filter(Boolean)
+        .join("\n\n")
+        .trim();
+      return text.length > 0 ? text : null;
+    } catch (err) {
+      console.warn("[ai-gateway] mistral OCR failed:", err);
+      return null;
+    }
   }
 
   /** Text generation on Workers AI (Llama). Returns the same shape as complete(). */
@@ -329,6 +408,16 @@ export class AIGateway {
         return { content: JSON.stringify(data), usage: { input_tokens: 0, output_tokens: 0 }, model: "", cached };
     }
   }
+}
+
+function arrayBufferToBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
 }
 
 /** Factory — call once per Worker request. */

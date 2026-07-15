@@ -151,6 +151,7 @@ export function DocumentSlideOver({ documentId, onClose }: Props) {
 // ── Sub-sections ──────────────────────────────────────────────────────────────
 
 interface DocRecord {
+  id?: string;
   originalName: string;
   status: string;
   fileType?: string | null;
@@ -187,6 +188,15 @@ function MetaGrid({ doc }: { doc: DocRecord }) {
           <AlertTriangle className="size-4 shrink-0 text-red-400 mt-0.5" />
           <p className="text-xs text-red-300">{doc.errorMessage}</p>
         </div>
+      )}
+      {doc.id && (
+        <a
+          href={`/api/document-file/${doc.id}?download=1`}
+          className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-amber/80 hover:text-amber"
+        >
+          <FileText className="size-3.5" />
+          Download original file
+        </a>
       )}
     </div>
   );

@@ -182,8 +182,9 @@ export async function POST(
 
   const ipHash = await sha256Hex(clientIp(req));
 
+  const viewId = nanoid();
   await db.insert(schema.shareViews).values({
-    id: nanoid(),
+    id: viewId,
     tokenId: token,
     orgId: shareToken.orgId,
     viewerName: body.name ?? null,
@@ -217,6 +218,8 @@ export async function POST(
   return Response.json({
     success: true,
     tier: shareToken.tier,
+    // Opaque id for the follow-up engagement beacon (sections read, duration).
+    viewId,
     org: {
       name: org?.name,
       vertical: org?.vertical,

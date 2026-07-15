@@ -11,7 +11,7 @@ import { drizzle } from "drizzle-orm/d1";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import * as schema from "@/db/schema";
-import { makeGateway, MODELS } from "@/lib/ai-gateway";
+import { makeGateway, modelsFor } from "@/lib/ai-gateway";
 import { extractJson } from "@/lib/json";
 import { getExtractPrompt } from "@/prompts/extract-registry";
 import { CONFIDENCE_THRESHOLD } from "@/prompts/shared/extract";
@@ -108,6 +108,7 @@ export async function runExtraction(params: ExtractionParams): Promise<void> {
   const { documentId, orgId, vertical, ocrText, orgName, env } = params;
   const db = drizzle(env.DB, { schema });
   const gateway = makeGateway(env);
+  const models = modelsFor(env);
 
   // Mark as extracting
   await db.update(schema.documents)
@@ -130,13 +131,13 @@ export async function runExtraction(params: ExtractionParams): Promise<void> {
   };
 
   try {
-    parsed = await attempt(MODELS.extraction);
+    parsed = await attempt(models.extraction);
   } catch (primaryErr) {
     // Fallback chain: one more shot on the secondary model before giving up.
     // Catches transient model failures AND malformed-JSON runs.
     console.warn("[extract] primary model failed, trying fallback:", primaryErr);
     try {
-      parsed = await attempt(MODELS.extraction_fb);
+      parsed = await attempt(models.extraction_fb);
     } catch (err) {
       console.error("[extract] Parse/call failed on both models, routing to review:", err);
       await db.update(schema.documents)

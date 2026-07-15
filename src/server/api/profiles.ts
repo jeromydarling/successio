@@ -13,13 +13,14 @@ import {
   businessProfiles,
   shareTokens,
   shareViews,
+  documentRequests,
   customers,
   financials,
   employees,
   processes,
   equipment,
 } from "@/db/schema";
-import { makeGateway, MODELS } from "@/lib/ai-gateway";
+import { makeGateway, modelsFor } from "@/lib/ai-gateway";
 import { extractJson } from "@/lib/json";
 import { buildProfilePrompt } from "@/prompts/manufacturing/profile";
 import { renderProfilePdf } from "@/lib/pdf";
@@ -86,7 +87,7 @@ export const profilesRouter = router({
     });
 
     const result = await gateway.complete({
-      model: MODELS.profile_draft,
+      model: modelsFor(ctx.env).profile_draft,
       messages: [{ role: "user", content: prompt }],
       max_tokens: 8192,
       temperature: 0.3,
@@ -301,6 +302,32 @@ export const profilesRouter = router({
         .where(and(
           eq(shareTokens.id, input.token),
           eq(shareTokens.orgId, ctx.session.orgId)
+        ));
+      return { success: true };
+    }),
+
+  /** Document requests buyers have submitted through buyer-tier links. */
+  listDocumentRequests: protectedProcedure.query(async ({ ctx }) => {
+    return ctx.db
+      .select()
+      .from(documentRequests)
+      .where(eq(documentRequests.orgId, ctx.session.orgId))
+      .orderBy(desc(documentRequests.createdAt))
+      .limit(100)
+      .all();
+  }),
+
+  /** Owner resolves a document request (after sending — or declining to send —
+   *  the documents through their own channel). */
+  resolveDocumentRequest: protectedProcedure
+    .input(z.object({ id: z.string(), status: z.enum(["fulfilled", "declined"]) }))
+    .mutation(async ({ input, ctx }) => {
+      await ctx.db
+        .update(documentRequests)
+        .set({ status: input.status, resolvedAt: new Date() })
+        .where(and(
+          eq(documentRequests.id, input.id),
+          eq(documentRequests.orgId, ctx.session.orgId)
         ));
       return { success: true };
     }),

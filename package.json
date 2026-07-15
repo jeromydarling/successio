@@ -14,7 +14,8 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "preview": "opennextjs-cloudflare build && wrangler dev",
-    "deploy": "opennextjs-cloudflare build && wrangler deploy"
+    "deploy": "opennextjs-cloudflare build && wrangler deploy",
+    "test:integration": "vitest run -c vitest.workers.config.ts"
   },
   "dependencies": {
     "@cloudflare/puppeteer": "^1.1.0",
@@ -47,6 +48,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.5.41",
     "@cloudflare/workers-types": "^4.20260604.1",
     "@playwright/test": "^1.49.1",
     "@tailwindcss/postcss": "^4.0.0",

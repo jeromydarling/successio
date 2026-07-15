@@ -74,6 +74,7 @@ export async function purgeOrgs(env: PurgeEnv, orgIds: string[]): Promise<{ user
 
   // D1: children before parents — cascades aren't relied on.
   await db.delete(schema.shareViews).where(inArray(schema.shareViews.orgId, orgIds));
+  await db.delete(schema.documentRequests).where(inArray(schema.documentRequests.orgId, orgIds));
   await db.delete(schema.shareTokens).where(inArray(schema.shareTokens.orgId, orgIds));
   await db.delete(schema.businessProfiles).where(inArray(schema.businessProfiles.orgId, orgIds));
   await db.delete(schema.documentChunks).where(inArray(schema.documentChunks.orgId, orgIds));

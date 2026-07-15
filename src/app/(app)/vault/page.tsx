@@ -149,6 +149,7 @@ export default function VaultPage() {
             >
               {docs.map((doc) => {
                 const Icon = FILE_ICONS[doc.fileType ?? ""] ?? File;
+                const hasThumb = doc.fileType === "image";
                 return (
                   <motion.article
                     key={doc.id}
@@ -159,14 +160,31 @@ export default function VaultPage() {
                     onClick={() => setSelectedDocId(doc.id)}
                     className="group cursor-pointer rounded-xl border border-edge bg-canvas-soft/40 p-4 transition-colors hover:border-amber/30 hover:bg-canvas-soft/60"
                   >
-                    <div className="flex items-start justify-between">
-                      <Icon className="size-7 text-amber/70" />
-                      {doc.relevanceScore != null && (
-                        <span className="rounded-full border border-amber/20 bg-amber/5 px-1.5 py-0.5 font-mono text-[10px] text-amber/70">
-                          {Math.round(doc.relevanceScore * 100)}%
-                        </span>
-                      )}
-                    </div>
+                    {hasThumb ? (
+                      <div className="relative mb-1 h-16 overflow-hidden rounded-lg border border-edge/60 bg-white/[0.03]">
+                        {/* eslint-disable-next-line @next/next/no-img-element -- authed R2 stream, not a static asset */}
+                        <img
+                          src={`/api/document-file/${doc.id}`}
+                          alt=""
+                          loading="lazy"
+                          className="h-full w-full object-cover"
+                        />
+                        {doc.relevanceScore != null && (
+                          <span className="absolute right-1.5 top-1.5 rounded-full border border-amber/20 bg-canvas/80 px-1.5 py-0.5 font-mono text-[10px] text-amber/80">
+                            {Math.round(doc.relevanceScore * 100)}%
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex items-start justify-between">
+                        <Icon className="size-7 text-amber/70" />
+                        {doc.relevanceScore != null && (
+                          <span className="rounded-full border border-amber/20 bg-amber/5 px-1.5 py-0.5 font-mono text-[10px] text-amber/70">
+                            {Math.round(doc.relevanceScore * 100)}%
+                          </span>
+                        )}
+                      </div>
+                    )}
                     <p className="mt-3 truncate text-sm font-medium text-ink">
                       {doc.originalName}
                     </p>

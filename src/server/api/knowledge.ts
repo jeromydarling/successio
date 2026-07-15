@@ -9,7 +9,7 @@ import { z } from "zod";
 import { eq, and, desc } from "drizzle-orm";
 import { router, protectedProcedure } from "../trpc";
 import { processes, organizations } from "@/db/schema";
-import { makeGateway, MODELS } from "@/lib/ai-gateway";
+import { makeGateway, modelsFor } from "@/lib/ai-gateway";
 import { extractJson } from "@/lib/json";
 import { buildSopPrompt } from "@/prompts/manufacturing/sop";
 import { nanoid } from "@/lib/nanoid";
@@ -67,7 +67,7 @@ export const knowledgeRouter = router({
       });
 
       const result = await gateway.complete({
-        model: MODELS.extraction,
+        model: modelsFor(ctx.env).extraction,
         messages: [{ role: "user", content: prompt }],
         max_tokens: 1024,
         temperature: 0,

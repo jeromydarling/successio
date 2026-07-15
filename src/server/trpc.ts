@@ -42,8 +42,13 @@ export interface Context {
     APP_URL?: string;
     // E2E rig: when not "on", signup auto-verifies and skips the email step.
     EMAIL_VERIFICATION?: string;
-    // Token guarding the test-user purge endpoint (has a known CI fallback).
+    // Token guarding the test-user purge endpoints (fail-closed when unset).
     E2E_ADMIN_TOKEN?: string;
+    // External AI provider keys — when present, modelsFor() upgrades the
+    // routing from Workers AI to Claude/Gemini/Mistral via the AI Gateway.
+    ANTHROPIC_API_KEY?: string;
+    GOOGLE_AI_API_KEY?: string;
+    MISTRAL_API_KEY?: string;
     // Token protecting the /superadmin CRM area.
     SUPER_ADMIN_TOKEN?: string;
   };
