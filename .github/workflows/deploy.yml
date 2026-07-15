@@ -66,21 +66,44 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: f84f7181c051be0040e972dcad48e697
-      # Push runtime secrets onto the deployed Worker (idempotent — re-sets the
-      # same value each run). Add the matching secret to:
-      #   GitHub → repo Settings → Secrets and variables → Actions
-      - name: Sync required secrets
+      # Push runtime secrets onto the deployed Worker in ONE bulk operation.
+      # (Sequential `wrangler secret put` calls each create + deploy a Worker
+      # version; rapid puts race each other and fail with "latest version of
+      # your Worker isn't currently deployed". `secret bulk` writes them all
+      # as a single version.) Unset repo secrets are skipped — each connector
+      # or AI provider lights up automatically once its key is added.
+      - name: Sync Worker secrets (bulk)
         run: |
-          printf '%s' "$JWT_SECRET" | npx wrangler secret put JWT_SECRET
-          if [ -n "$SUPER_ADMIN_TOKEN" ]; then
-            printf '%s' "$SUPER_ADMIN_TOKEN" | npx wrangler secret put SUPER_ADMIN_TOKEN
-          else
-            echo "::warning::SUPER_ADMIN_TOKEN repo secret not set — /superadmin stays locked until it is"
-          fi
-          if [ -n "$E2E_ADMIN_TOKEN" ]; then
-            printf '%s' "$E2E_ADMIN_TOKEN" | npx wrangler secret put E2E_ADMIN_TOKEN
-          else
-            echo "::warning::E2E_ADMIN_TOKEN repo secret not set — E2E seed/purge endpoints stay disabled"
+          python3 - <<'PY'
+          import json, os
+          keys = [
+            "JWT_SECRET", "SUPER_ADMIN_TOKEN", "E2E_ADMIN_TOKEN",
+            "DROPBOX_APP_KEY", "GOOGLE_PICKER_API_KEY", "GOOGLE_OAUTH_CLIENT_ID",
+            "MS_CLIENT_ID", "MS_TENANT_ID",
+            "ANTHROPIC_API_KEY", "MISTRAL_API_KEY", "GOOGLE_AI_API_KEY",
+          ]
+          out = {}
+          for k in keys:
+              v = os.environ.get(k, "")
+              if v:
+                  out[k] = v
+              else:
+                  print(f"::notice::skip {k} (repo secret not set)", flush=True)
+          for required in ("JWT_SECRET", "SUPER_ADMIN_TOKEN", "E2E_ADMIN_TOKEN"):
+              if required not in out:
+                  print(f"::warning::{required} repo secret not set — the feature it gates stays disabled", flush=True)
+          with open("/tmp/worker-secrets.json", "w") as f:
+              json.dump(out, f)
+          PY
+          ok=""
+          for attempt in 1 2 3; do
+            if npx wrangler secret bulk /tmp/worker-secrets.json; then ok=1; break; fi
+            echo "secret bulk attempt $attempt failed — retrying in 10s"
+            sleep 10
+          done
+          rm -f /tmp/worker-secrets.json
+          if [ -z "$ok" ]; then
+            echo "::warning::Worker secret sync failed after 3 attempts — existing secret values remain in effect; re-run the workflow if a secret was rotated"
           fi
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -88,24 +111,6 @@ jobs:
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           SUPER_ADMIN_TOKEN: ${{ secrets.SUPER_ADMIN_TOKEN }}
           E2E_ADMIN_TOKEN: ${{ secrets.E2E_ADMIN_TOKEN }}
-      # Optional keys — only synced if the repo secret is set. Connectors and
-      # external AI providers each light up automatically once their key lands
-      # (modelsFor() upgrades extraction/profile routing; Mistral OCR becomes
-      # the primary scanned-PDF path).
-      - name: Sync optional keys (connectors + AI providers)
-        run: |
-          sync() { if [ -n "$2" ]; then printf '%s' "$2" | npx wrangler secret put "$1"; else echo "skip $1 (not set)"; fi; }
-          sync DROPBOX_APP_KEY "$DROPBOX_APP_KEY"
-          sync GOOGLE_PICKER_API_KEY "$GOOGLE_PICKER_API_KEY"
-          sync GOOGLE_OAUTH_CLIENT_ID "$GOOGLE_OAUTH_CLIENT_ID"
-          sync MS_CLIENT_ID "$MS_CLIENT_ID"
-          sync MS_TENANT_ID "$MS_TENANT_ID"
-          sync ANTHROPIC_API_KEY "$ANTHROPIC_API_KEY"
-          sync MISTRAL_API_KEY "$MISTRAL_API_KEY"
-          sync GOOGLE_AI_API_KEY "$GOOGLE_AI_API_KEY"
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: f84f7181c051be0040e972dcad48e697
           DROPBOX_APP_KEY: ${{ secrets.DROPBOX_APP_KEY }}
           GOOGLE_PICKER_API_KEY: ${{ secrets.GOOGLE_PICKER_API_KEY }}
           GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
