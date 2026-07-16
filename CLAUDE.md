@@ -619,14 +619,14 @@ Always fetch live docs before implementing integrations (do not rely on training
 
 | Key | Purpose | Where set (local → prod) | Issuer / Console | Status |
 |---|---|---|---|---|
-| `ANTHROPIC_API_KEY` | Claude extraction + profile drafting (via AI Gateway) | `.dev.vars` → `wrangler secret` | console.anthropic.com | ⬜ not set (Workers AI Llama in use) |
-| `MISTRAL_API_KEY` | Mistral OCR for scanned docs | `.dev.vars` → `wrangler secret` | console.mistral.ai | ⬜ not set (Browser Rendering OCR in use) |
-| `GOOGLE_AI_API_KEY` | Gemini 2.5 Flash OCR/extraction fallback | `.dev.vars` → `wrangler secret` | aistudio.google.com | ⬜ not set |
+| `ANTHROPIC_API_KEY` | Claude extraction + profile drafting (via AI Gateway) | `.dev.vars` → `wrangler secret` | console.anthropic.com | ✅ set — Claude handles extraction + profile drafting |
+| `MISTRAL_API_KEY` | Mistral OCR for scanned docs | `.dev.vars` → `wrangler secret` | console.mistral.ai | ✅ set — Mistral is primary scanned-PDF OCR |
+| `GOOGLE_AI_API_KEY` | Gemini 2.5 Flash OCR/extraction fallback | GitHub repo secret → synced by deploy.yml | aistudio.google.com | ✅ set |
 | `CF_ACCOUNT_ID` | Cloudflare account scope for AI Gateway | `wrangler.toml [vars]` | dash.cloudflare.com | ✅ set in `[vars]` |
 | `CF_AI_GATEWAY_ID` | AI Gateway id (`successio-prod`) | `wrangler.toml [vars]` | dash.cloudflare.com → AI Gateway | ✅ `successio-prod` |
 | `JWT_SECRET` | Signs/validates user session JWTs | GitHub repo secret → synced by deploy.yml | self-generated (`openssl rand -hex 32`) | ✅ synced on every deploy |
-| `SUPER_ADMIN_TOKEN` | Password for the `/superadmin` CRM | GitHub repo secret → synced by deploy.yml | self-generated (`openssl rand -hex 32`) | ⬜ add GitHub repo secret |
-| `E2E_ADMIN_TOKEN` | Gates the E2E seed/purge endpoints (fail-closed) | GitHub repo secret → synced by deploy.yml | self-generated (`openssl rand -hex 32`) | ⬜ add GitHub repo secret |
+| `SUPER_ADMIN_TOKEN` | Password for the `/superadmin` CRM | GitHub repo secret → synced by deploy.yml | self-generated (`openssl rand -hex 32`) | ✅ set + synced |
+| `E2E_ADMIN_TOKEN` | Gates the E2E seed/purge endpoints (fail-closed) | GitHub repo secret → synced by deploy.yml | self-generated (`openssl rand -hex 32`) | ✅ set + synced |
 | `ENCRYPTION_KEY` | Encrypts PII fields at rest in D1 (future) | `.dev.vars` → `wrangler secret` | self-generated (`openssl rand -hex 32`) | ⬜ not set |
 | `SENTRY_DSN` | Worker error reporting (`withSentry`) | Cloudflare dashboard secret | sentry.io | ✅ set via dashboard |
 

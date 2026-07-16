@@ -32,6 +32,11 @@ export const organizations = sqliteTable(
     associationId: text("association_id"),
     // Churn prevention: timestamp of last re-engagement email so we don't spam.
     churnEmailSentAt: integer("churn_email_sent_at", { mode: "timestamp" }),
+    // Lifetime count of re-engagement emails — capped so the cron can never
+    // nag a stable account forever.
+    churnEmailCount: integer("churn_email_count").notNull().default(0),
+    // Set via the unsubscribe link in re-engagement emails (CAN-SPAM).
+    churnOptOut: integer("churn_opt_out", { mode: "boolean" }).notNull().default(false),
     ...timestamps,
   },
   (t) => [index("orgs_assoc_idx").on(t.associationId)]

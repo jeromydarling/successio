@@ -16,6 +16,7 @@ import {
   BarChart3,
 } from "lucide-react";
 import { AppTopNav } from "@/components/app/app-topnav";
+import { GettingStarted } from "@/components/dashboard/getting-started";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc-client";
 import { cn } from "@/lib/utils";
@@ -73,6 +74,8 @@ export default function DashboardPage() {
       <AppTopNav title="Dashboard" />
       <main className="flex-1 overflow-y-auto p-6">
         <div className="mx-auto max-w-5xl space-y-6">
+          {/* New-account onboarding — self-hides once every step is done */}
+          <GettingStarted />
 
           {/* Readiness score hero */}
           <motion.div

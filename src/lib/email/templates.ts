@@ -90,6 +90,7 @@ export function reEngagementEmail(opts: {
   orgName: string;
   signals: string[];
   url: string;
+  unsubscribeUrl: string;
 }): Built {
   const hi = opts.name ? `Hi ${opts.name},` : "Hi,";
   const bullets = opts.signals
@@ -103,9 +104,10 @@ export function reEngagementEmail(opts: {
         <p style="margin:0 0 16px;">A few things on <strong>${opts.orgName}</strong> need your attention:</p>
         <ul style="margin:0 0 20px;padding-left:20px;">${bullets}</ul>
         <p style="margin:0 0 24px;">${button(opts.url, "Return to Successio")}</p>
-        <p style="margin:0;color:#94a3b8;font-size:13px;">You're receiving this because you have a Successio account. Reply to unsubscribe.</p>`,
+        <p style="margin:0;color:#94a3b8;font-size:13px;">You're receiving this because you have a Successio account.
+        <a href="${opts.unsubscribeUrl}" style="color:#94a3b8;text-decoration:underline;">Unsubscribe from reminder emails</a>.</p>`,
     }),
-    text: `${hi}\n\nA few things on ${opts.orgName} need your attention:\n${opts.signals.map((s) => `- ${s}`).join("\n")}\n\nReturn to Successio:\n${opts.url}`,
+    text: `${hi}\n\nA few things on ${opts.orgName} need your attention:\n${opts.signals.map((s) => `- ${s}`).join("\n")}\n\nReturn to Successio:\n${opts.url}\n\nUnsubscribe from reminder emails: ${opts.unsubscribeUrl}`,
   };
 }
 

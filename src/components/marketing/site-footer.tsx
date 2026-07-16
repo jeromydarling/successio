@@ -8,6 +8,7 @@ const COLUMNS = [
       { label: "Compare", href: "/compare" },
       { label: "Pricing", href: "/pricing" },
       { label: "Live demo", href: "/demo" },
+      { label: "Help Center", href: "/help" },
     ],
   },
   {
@@ -76,9 +77,9 @@ export function SiteFooter() {
         <div className="mt-14 flex flex-col items-start justify-between gap-4 border-t border-edge pt-8 text-sm text-ink-faint md:flex-row md:items-center">
           <p>© {new Date().getFullYear()} Successio. Pass the torch.</p>
           <div className="flex gap-6">
-            <Link href="#" className="hover:text-ink-soft">Privacy</Link>
-            <Link href="#" className="hover:text-ink-soft">Security</Link>
-            <Link href="#" className="hover:text-ink-soft">Terms</Link>
+            <Link href="/privacy" className="hover:text-ink-soft">Privacy</Link>
+            <Link href="/security" className="hover:text-ink-soft">Security</Link>
+            <Link href="/terms" className="hover:text-ink-soft">Terms</Link>
           </div>
         </div>
       </div>

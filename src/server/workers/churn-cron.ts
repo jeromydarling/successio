@@ -9,7 +9,12 @@
  *   C. No document upload in 14+ days
  *   D. Profile created but never shared with anyone
  *
- * De-duplication: won't re-email an org until 7 days after the last send.
+ * Guardrails (an owner must never experience this as nagware):
+ *   - max 3 re-engagement emails per org, lifetime
+ *   - at least 30 days between sends
+ *   - never emails an org with an active share link (they're selling, not churning)
+ *   - unsubscribe link in every email, honored immediately (churnOptOut)
+ *   - orgs younger than 14 days and demo orgs are skipped
  */
 
 import { drizzle } from "drizzle-orm/d1";
@@ -85,7 +90,14 @@ export async function runChurnCron(env: ChurnEnv, ctx?: ExecutionContext): Promi
     );
   const signalD = new Set(signalDRows.map((r) => r.org_id));
 
-  // All owner users + their org's churn gate timestamp.
+  // Orgs with any live share link are in an active sale process — a
+  // "we miss you" email to them would be actively harmful.
+  const sellingRows = await db.all<{ org_id: string }>(
+    sql`SELECT DISTINCT org_id FROM share_tokens`
+  );
+  const activelySelling = new Set(sellingRows.map((r) => r.org_id));
+
+  // All owner users + their org's churn gate state.
   const owners = await db
     .select({
       orgId: schema.users.orgId,
@@ -93,6 +105,8 @@ export async function runChurnCron(env: ChurnEnv, ctx?: ExecutionContext): Promi
       name: schema.users.name,
       orgName: schema.organizations.name,
       churnEmailSentAt: schema.organizations.churnEmailSentAt,
+      churnEmailCount: schema.organizations.churnEmailCount,
+      churnOptOut: schema.organizations.churnOptOut,
       orgCreatedAt: schema.organizations.createdAt,
     })
     .from(schema.users)
@@ -101,13 +115,19 @@ export async function runChurnCron(env: ChurnEnv, ctx?: ExecutionContext): Promi
     .all();
 
   let sent = 0;
-  const sevenDaysAgoMs = sevenDaysAgo * 1000;
+  const MAX_LIFETIME_EMAILS = 3;
+  const RESEND_WINDOW_MS = 30 * 86400 * 1000;
 
   for (const owner of owners) {
-    const { orgId, email, name, orgName, churnEmailSentAt, orgCreatedAt } = owner;
+    const { orgId, email, name, orgName, churnEmailSentAt, churnEmailCount, churnOptOut, orgCreatedAt } = owner;
 
     // Skip demo orgs.
     if (orgId.startsWith("demo-")) continue;
+
+    // Honour unsubscribes, the lifetime cap, and active sellers.
+    if (churnOptOut) continue;
+    if ((churnEmailCount ?? 0) >= MAX_LIFETIME_EMAILS) continue;
+    if (activelySelling.has(orgId)) continue;
 
     // Skip orgs less than 14 days old — brand-new customers get onboarding,
     // not churn nags, and their login history hasn't accumulated yet.
@@ -121,8 +141,8 @@ export async function runChurnCron(env: ChurnEnv, ctx?: ExecutionContext): Promi
 
     if (score < 2) continue;
 
-    // De-duplicate: skip if we emailed in the last 7 days.
-    if (churnEmailSentAt && churnEmailSentAt.getTime() > sevenDaysAgoMs) continue;
+    // At most one email per 30 days.
+    if (churnEmailSentAt && churnEmailSentAt.getTime() > Date.now() - RESEND_WINDOW_MS) continue;
 
     const signals: string[] = [];
     if (signalA.has(orgId)) signals.push("No team login in over a week");
@@ -131,14 +151,23 @@ export async function runChurnCron(env: ChurnEnv, ctx?: ExecutionContext): Promi
     if (signalD.has(orgId)) signals.push("Business profile created but never shared with buyers");
 
     try {
-      const mail = reEngagementEmail({ name, orgName, signals, url: `${base}/dashboard` });
+      const mail = reEngagementEmail({
+        name,
+        orgName,
+        signals,
+        url: `${base}/dashboard`,
+        unsubscribeUrl: `${base}/api/email/unsubscribe?org=${orgId}`,
+      });
       await sender.send({ to: email, ...mail });
       await db
         .update(schema.organizations)
-        .set({ churnEmailSentAt: new Date() })
+        .set({
+          churnEmailSentAt: new Date(),
+          churnEmailCount: (churnEmailCount ?? 0) + 1,
+        })
         .where(eq(schema.organizations.id, orgId));
       sent++;
-      console.info(`[churn-cron] emailed ${orgId} score=${score}`);
+      console.info(`[churn-cron] emailed ${orgId} score=${score} count=${(churnEmailCount ?? 0) + 1}`);
     } catch (err) {
       console.error(`[churn-cron] failed for ${orgId}:`, err);
     }
