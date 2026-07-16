@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -28,6 +29,7 @@ type SettingsFormRaw = {
 };
 
 export default function SettingsPage() {
+  const [ingestCopied, setIngestCopied] = useState(false);
   const { data: org } = trpc.businesses.getOrg.useQuery();
   const { data: me } = trpc.auth.me.useQuery();
   const updateOrg = trpc.businesses.updateOrg.useMutation();
@@ -91,6 +93,42 @@ export default function SettingsPage() {
               <p className="mt-3 text-sm text-red-400">{sendVerify.error.message}</p>
             )}
           </div>
+
+          {/* Private email-ingest address */}
+          {org && (
+            <div className="rounded-2xl border border-edge bg-canvas-soft/50 p-7">
+              <h2 className="text-lg font-semibold text-ink">Email documents in</h2>
+              <p className="mt-1.5 text-sm leading-relaxed text-ink-soft">
+                Anything emailed to this address lands in your Document Vault and processes
+                automatically — perfect for forwards from your bookkeeper or a copier that
+                emails PDFs. The address is unique to your business; share it only with
+                people you trust to add documents.
+              </p>
+              <div className="mt-4 flex items-center gap-2">
+                <code className="flex-1 truncate rounded-lg border border-edge bg-canvas px-3 py-2.5 font-mono text-xs text-amber-bright">
+                  docs+{org.id}@successio.pro
+                </code>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    navigator.clipboard.writeText(`docs+${org.id}@successio.pro`);
+                    setIngestCopied(true);
+                    setTimeout(() => setIngestCopied(false), 2000);
+                  }}
+                >
+                  {ingestCopied ? "Copied!" : "Copy"}
+                </Button>
+              </div>
+              <p className="mt-2 text-xs text-ink-faint">
+                Up to 10 attachments per email, 25 MB each.{" "}
+                <a href="/help/email-documents" className="text-amber underline underline-offset-2">
+                  How it works
+                </a>
+              </p>
+            </div>
+          )}
 
           <form
             onSubmit={handleSubmit(onSubmit)}

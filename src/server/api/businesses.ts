@@ -65,6 +65,49 @@ export const businessesRouter = router({
       return { success: true };
     }),
 
+  /** Powers the dashboard's getting-started checklist — each step's
+   *  completion is derived from real data, never ticked manually. */
+  onboardingStatus: protectedProcedure.query(async ({ ctx }) => {
+    const { orgId } = ctx.session;
+    const { documents, processes, businessProfiles } = await import("@/db/schema");
+    const { count } = await import("drizzle-orm");
+
+    const [org, docs, sops, custs, equip, fins, emps, profile] = await Promise.all([
+      ctx.db
+        .select({
+          location: organizations.location,
+          founded: organizations.founded,
+          employeeCount: organizations.employeeCount,
+        })
+        .from(organizations)
+        .where(eq(organizations.id, orgId))
+        .get(),
+      ctx.db.select({ n: count() }).from(documents).where(eq(documents.orgId, orgId)).get(),
+      ctx.db.select({ n: count() }).from(processes).where(eq(processes.orgId, orgId)).get(),
+      ctx.db.select({ n: count() }).from(customers).where(eq(customers.orgId, orgId)).get(),
+      ctx.db.select({ n: count() }).from(equipment).where(eq(equipment.orgId, orgId)).get(),
+      ctx.db.select({ n: count() }).from(financials).where(eq(financials.orgId, orgId)).get(),
+      ctx.db.select({ n: count() }).from(employees).where(eq(employees.orgId, orgId)).get(),
+      ctx.db
+        .select({ id: businessProfiles.id })
+        .from(businessProfiles)
+        .where(eq(businessProfiles.orgId, orgId))
+        .limit(1)
+        .get(),
+    ]);
+
+    const entityCount =
+      (custs?.n ?? 0) + (equip?.n ?? 0) + (fins?.n ?? 0) + (emps?.n ?? 0);
+
+    return {
+      detailsComplete: !!(org?.location && org?.founded && org?.employeeCount),
+      hasDocuments: (docs?.n ?? 0) >= 1,
+      hasBusinessData: entityCount >= 1,
+      hasSop: (sops?.n ?? 0) >= 1,
+      hasProfile: !!profile,
+    };
+  }),
+
   latestScore: protectedProcedure.query(async ({ ctx }) => {
     const score = await ctx.db
       .select()

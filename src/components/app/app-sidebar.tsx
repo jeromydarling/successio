@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
+  HelpCircle,
   Upload,
   FolderOpen,
   Database,
@@ -29,6 +30,7 @@ const NAV = [
   { href: "/legacy", label: "Legacy Book", icon: BookOpen },
   { href: "/profile", label: "Deal Room", icon: FileText },
   { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/help", label: "Help", icon: HelpCircle },
 ];
 
 export function AppSidebar() {
