@@ -62,6 +62,15 @@ export async function POST(req: Request): Promise<Response> {
   }
   const e = env as unknown as { DB: D1Database; E2E_ADMIN_TOKEN?: string };
 
+  // Optional seed variations (read from a clone — readE2eCreds consumes the
+  // body). profileDraft seeds the profile unpublished so the review/publish
+  // flow can be E2E'd deterministically; needsReviewDoc adds one document in
+  // the needs_review state so the confirm-review flow can be exercised.
+  const opts = (await req
+    .clone()
+    .json()
+    .catch(() => ({}))) as { profileDraft?: boolean; needsReviewDoc?: boolean };
+
   const { token, email } = await readE2eCreds(req);
   const auth = checkE2eAuth(e.E2E_ADMIN_TOKEN, token, email);
   if (!auth.ok) return Response.json({ ok: false, error: auth.error }, { status: auth.status });
@@ -101,6 +110,22 @@ export async function POST(req: Request): Promise<Response> {
       fileType: "pdf", documentType: "equipment_list", status: "complete", ocrConfidence: 0.95,
     },
   ]);
+
+  // Optional: one document awaiting human review (for the confirm-review flow).
+  let docReview: string | null = null;
+  if (opts.needsReviewDoc) {
+    docReview = nanoid();
+    await db.insert(schema.documents).values({
+      id: docReview, orgId, uploadedBy: user.id, r2Key: `seed/${orgId}/handwritten.pdf`,
+      originalName: "Handwritten-Job-Log.pdf", mimeType: "application/pdf", sizeBytes: 52_100,
+      fileType: "pdf", documentType: "work_order", status: "needs_review", ocrConfidence: 0.58,
+      ocrText: "Job log (handwritten, partially legible) ...",
+    });
+    await db.insert(schema.extractedEntities).values({
+      id: nanoid(), documentId: docReview, orgId, entityType: "process", confidence: 0.55, needsReview: true,
+      data: JSON.stringify([{ title: "Rush order handling (illegible in places)", steps: ["Check with Dave"], confidence: 0.55 }]),
+    });
+  }
 
   // ── Extracted entities (drive the detail slide-over) ───────────────────────
   await db.insert(schema.extractedEntities).values([
@@ -149,9 +174,11 @@ export async function POST(req: Request): Promise<Response> {
   );
 
   // ── A fully-written profile (deal room, share, PDF, translation) ───────────
+  // profileDraft: seeded unpublished so the review → audit → publish flow is
+  // deterministically testable; default stays published (journey spec).
   await db.insert(schema.businessProfiles).values({
     id: nanoid(), orgId, title: "Brenner Precision — Business Profile",
-    content: JSON.stringify(PROFILE_CONTENT), isDraft: false,
+    content: JSON.stringify(PROFILE_CONTENT), isDraft: !!opts.profileDraft,
   });
 
   // ── Milestones (history timeline) ──────────────────────────────────────────
