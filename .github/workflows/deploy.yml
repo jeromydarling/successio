@@ -53,11 +53,24 @@ jobs:
       # rather than blocking every deploy.
       - name: Apply D1 migrations
         run: |
-          # Diagnostic: shows which account + permission scopes the token in
-          # the CLOUDFLARE_API_TOKEN secret actually carries (7403 debugging).
-          npx wrangler whoami || true
+          # Diagnostics for the persistent 7403: hit the D1 API directly with
+          # the token and print Cloudflare's FULL error envelope (wrangler
+          # swallows the inner error chain that names the missing permission).
+          # These bodies contain no secrets — only success flags and errors.
+          echo "— D1 list probe:"
+          curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/f84f7181c051be0040e972dcad48e697/d1/database?per_page=1" \
+            | head -c 900; echo
+          echo "— D1 query probe (SELECT 1 — mirrors the failing wrangler call):"
+          curl -s -X POST -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" \
+            -d '{"sql":"SELECT 1"}' \
+            "https://api.cloudflare.com/client/v4/accounts/f84f7181c051be0040e972dcad48e697/d1/database/e27ac08e-d900-4d62-b5c2-4540f369636d/query" \
+            | head -c 900; echo
+          echo "— token verify (id + status of the token actually in the secret):"
+          curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/user/tokens/verify" | head -c 500; echo
           if ! npx wrangler d1 migrations apply successio-prod --remote; then
-            echo "::warning::D1 migrations could not be applied — check the wrangler whoami output above for the token's actual account and permission scopes. Pending migrations must be applied manually until this is resolved."
+            echo "::warning::D1 migrations could not be applied — see the API probe output above for Cloudflare's exact error. Pending migrations must be applied manually until this is resolved."
           fi
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
