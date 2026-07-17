@@ -130,8 +130,9 @@ test("fresh signup lands on the onboarding checklist, steps complete from real d
   // Completing business details in Settings completes step 1 automatically.
   await page.goto("/settings");
   await page.getByPlaceholder("Akron, Ohio").fill("E2E City, OH");
-  await page.getByPlaceholder("1987").fill("1990");
-  await page.getByPlaceholder("31").fill("12");
+  // exact: the description textarea's placeholder also contains "1987".
+  await page.getByPlaceholder("1987", { exact: true }).fill("1990");
+  await page.getByPlaceholder("31", { exact: true }).fill("12");
   await page.getByRole("button", { name: /save changes/i }).click();
   await expect(page.getByText("Saved!")).toBeVisible({ timeout: 15_000 });
 
