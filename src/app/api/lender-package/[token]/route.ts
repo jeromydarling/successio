@@ -123,7 +123,15 @@ export async function GET(
     })(),
     financials: dedupeFinancialsByYear(fins),
     customers: custs,
-    employees: emps,
+    // Employees are anonymized by design: this bundle reaches strangers
+    // before the crew knows the business is for sale. Roles + tenure carry
+    // the diligence signal; names and free-text notes stay private.
+    employees: emps.map((e, i) => ({
+      id: `employee-${i + 1}`,
+      role: e.role,
+      tenureYears: e.tenureYears,
+      isKeyPerson: e.isKeyPerson,
+    })),
     equipment: equips,
     processes: procs.map(p => ({
       ...p,

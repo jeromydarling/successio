@@ -12,25 +12,39 @@
  */
 
 import { drizzle } from "drizzle-orm/d1";
-import { eq, sql } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { z } from "zod";
 import * as schema from "@/db/schema";
 import { nanoid } from "@/lib/nanoid";
 import { rateLimit, sha256Hex } from "@/lib/rate-limit";
 import { filterByTier } from "@/lib/share-tier";
+import { getEmailSender } from "@/lib/email/sender";
+import { shareVerificationEmail } from "@/lib/email/templates";
 
 /** NDA-gate submission. Everything a visitor sends is length-capped and typed
  *  before it touches the audit log. */
 const ndaBodySchema = z.object({
   name: z.string().trim().min(1).max(200).optional(),
   email: z.string().trim().email().max(320).optional(),
+  /** 6-digit email verification code (second step of the gate). */
+  code: z.string().trim().regex(/^\d{6}$/).optional(),
   durationSeconds: z.number().int().min(0).max(86_400).optional(),
 });
 
 interface ShareEnv {
   DB: D1Database;
   SESSIONS?: KVNamespace;
+  EMAIL?: { send: (m: unknown) => Promise<{ messageId?: string }> };
+  CF_API_TOKEN?: string;
+  EMAIL_FROM?: string;
+}
+
+/** Cryptographically random 6-digit code. */
+function makeCode(): string {
+  const buf = new Uint32Array(1);
+  crypto.getRandomValues(buf);
+  return String(buf[0] % 1_000_000).padStart(6, "0");
 }
 
 async function getEnv(): Promise<ShareEnv> {
@@ -170,14 +184,100 @@ export async function POST(
   } catch { /* no JSON body — treated as an empty submission below */ }
 
   const isPublic = shareToken.tier === "public";
-  const ndaSatisfied = Boolean(body.name && body.email);
 
-  // Non-public tiers require name + email before any confidential data flows.
-  if (!isPublic && !ndaSatisfied) {
-    return Response.json(
-      { error: "Name and email are required to view this confidential profile" },
-      { status: 403 }
-    );
+  // Non-public tiers require name + a VERIFIED email before any confidential
+  // data flows. Verification: a 6-digit code is emailed to the address the
+  // viewer entered; the payload releases only when the code comes back. This
+  // stops "a@b.co" from unlocking someone's lifetime financials.
+  if (!isPublic) {
+    if (!body.name || !body.email) {
+      return Response.json(
+        { error: "Name and email are required to view this confidential profile" },
+        { status: 403 }
+      );
+    }
+    const email = body.email.toLowerCase();
+
+    // Test-rig orgs (owner is an e2e+ account on fictional seeded data) keep
+    // the single-step gate so automated tests don't need an inbox.
+    const owner = await db
+      .select({ email: schema.users.email })
+      .from(schema.users)
+      .where(and(eq(schema.users.orgId, shareToken.orgId), eq(schema.users.role, "owner")))
+      .get();
+    const isTestOrg = !!owner?.email && /^e2e\+/i.test(owner.email);
+
+    if (!isTestOrg) {
+      const now = Date.now();
+
+      if (!body.code) {
+        // Step 1: issue a code to the entered address.
+        if (env.SESSIONS) {
+          const key = `share-code:${await sha256Hex(`${token}:${email}`)}`;
+          const { allowed } = await rateLimit(env.SESSIONS, key, 3, 600);
+          if (!allowed) {
+            return Response.json({ error: "Too many code requests — wait a few minutes" }, { status: 429 });
+          }
+        }
+        const code = makeCode();
+        const org = await db
+          .select({ name: schema.organizations.name })
+          .from(schema.organizations)
+          .where(eq(schema.organizations.id, shareToken.orgId))
+          .get();
+        // One active code per (token, email).
+        await db
+          .delete(schema.shareVerifications)
+          .where(and(eq(schema.shareVerifications.tokenId, token), eq(schema.shareVerifications.email, email)));
+        await db.insert(schema.shareVerifications).values({
+          id: nanoid(),
+          tokenId: token,
+          email,
+          codeHash: await sha256Hex(`${token}:${code}`),
+          expiresAt: new Date(now + 15 * 60 * 1000),
+        });
+        try {
+          const mail = shareVerificationEmail({ code, orgName: org?.name ?? "this business" });
+          await getEmailSender(env as Parameters<typeof getEmailSender>[0]).send({ to: email, ...mail });
+        } catch (err) {
+          console.error("[share] verification email failed:", err);
+          return Response.json(
+            { error: "We couldn't send the verification email — try again shortly." },
+            { status: 502 }
+          );
+        }
+        return Response.json({ verificationRequired: true }, { status: 202 });
+      }
+
+      // Step 2: validate the code.
+      const row = await db
+        .select()
+        .from(schema.shareVerifications)
+        .where(and(eq(schema.shareVerifications.tokenId, token), eq(schema.shareVerifications.email, email)))
+        .get();
+
+      if (!row || row.expiresAt.getTime() < now) {
+        return Response.json(
+          { error: "That code has expired — request a new one.", codeExpired: true },
+          { status: 403 }
+        );
+      }
+      if (row.attempts >= 6) {
+        return Response.json({ error: "Too many incorrect attempts — request a new code.", codeExpired: true }, { status: 429 });
+      }
+      const expected = await sha256Hex(`${token}:${body.code}`);
+      if (expected !== row.codeHash) {
+        await db
+          .update(schema.shareVerifications)
+          .set({ attempts: row.attempts + 1 })
+          .where(eq(schema.shareVerifications.id, row.id));
+        return Response.json({ error: "Incorrect code — check the email and try again." }, { status: 403 });
+      }
+      await db
+        .update(schema.shareVerifications)
+        .set({ verifiedAt: new Date() })
+        .where(eq(schema.shareVerifications.id, row.id));
+    }
   }
 
   const ipHash = await sha256Hex(clientIp(req));

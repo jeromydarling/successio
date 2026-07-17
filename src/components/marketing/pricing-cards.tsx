@@ -16,6 +16,8 @@ export interface PricingTier {
   annualSave?: string;
   customPrice?: string;
   priceSub?: string;
+  /** Live Stripe payment links (monthly/annual) — renders a "subscribe now" path. */
+  subscribe?: { monthly: string; annual: string };
   badge?: string;
   elevated?: boolean;
   variant: "primary" | "outline" | "ghost";
@@ -129,6 +131,14 @@ export function PricingCards({ tiers }: { tiers: PricingTier[] }) {
                 </Button>
               </Link>
               {t.note && <p className="mt-2.5 text-center text-xs text-ink-faint">{t.note}</p>}
+              {t.subscribe && (
+                <a
+                  href={annual ? t.subscribe.annual : t.subscribe.monthly}
+                  className="mt-2 block text-center text-xs font-medium text-amber underline underline-offset-2 hover:text-amber-bright"
+                >
+                  Ready now? Subscribe — 14-day free trial, cancel anytime
+                </a>
+              )}
 
               {/* Features */}
               <ul className="mt-6 space-y-2.5 border-t border-edge pt-6">

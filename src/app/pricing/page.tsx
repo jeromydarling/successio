@@ -23,6 +23,10 @@ const PRICING_CONTENT = {
       variant: "outline",
       cta: { label: "Start Free Trial", href: "/signup?plan=new-owner", ariaLabel: "Start a free trial of the New Owner plan" },
       note: "14-day free trial · No credit card required",
+      subscribe: {
+        monthly: "https://buy.stripe.com/8x23cw5kHdo56Hp3fKes003",
+        annual: "https://buy.stripe.com/cNiaEYaF1abTghZeYses004",
+      },
       features: [
         "Full inherited document vault from the seller",
         "All extracted knowledge and SOPs",
@@ -44,6 +48,10 @@ const PRICING_CONTENT = {
       variant: "primary",
       cta: { label: "Start Free Trial", href: "/signup?plan=owner", ariaLabel: "Start a free trial of the Owner plan" },
       note: "14-day free trial · No credit card required",
+      subscribe: {
+        monthly: "https://buy.stripe.com/28EfZidRdes9c1JbMges001",
+        annual: "https://buy.stripe.com/aFaeVedRd3Nv9TBeYses002",
+      },
       features: [
         "Unlimited uploads — PDFs, scans, photos, spreadsheets, QuickBooks",
         "AI extraction across all verticals",
@@ -158,8 +166,30 @@ export default function PricingPage() {
       </section>
 
       {/* Cards + billing toggle */}
-      <section className="relative pb-24">
+      <section className="relative pb-12">
         <PricingCards tiers={c.tiers} />
+      </section>
+
+      {/* Done-for-you concierge */}
+      <section className="relative pb-24">
+        <div className="mx-auto max-w-3xl px-5">
+          <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.04] p-7 text-center">
+            <h3 className="text-lg font-semibold text-ink">
+              Prefer we do it for you?
+            </h3>
+            <p className="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-ink-soft">
+              Some owners would rather hand us the shoebox. With the <span className="font-medium text-ink">done-for-you service</span>,
+              you email or mail us your records — we scan, upload, review every extraction, and build
+              your complete business record and buyer profile with you on the phone. White-glove, flat fee.
+            </p>
+            <a
+              href="/contact?plan=concierge"
+              className="mt-4 inline-block rounded-xl border border-emerald-500/40 px-5 py-2.5 text-sm font-semibold text-emerald-400 transition-colors hover:bg-emerald-500/10"
+            >
+              Ask about done-for-you
+            </a>
+          </div>
+        </div>
       </section>
 
       {/* Comparison table */}

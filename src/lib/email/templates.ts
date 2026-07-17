@@ -111,6 +111,23 @@ export function reEngagementEmail(opts: {
   };
 }
 
+export function shareVerificationEmail(opts: {
+  code: string;
+  orgName: string;
+}): Built {
+  return {
+    subject: `${opts.code} is your verification code`,
+    html: layout({
+      heading: "Verify your email to continue",
+      bodyHtml: `<p style="margin:0 0 16px;">You asked to view the confidential business profile for <strong>${opts.orgName}</strong>.</p>
+        <p style="margin:0 0 8px;">Enter this code on the page to continue:</p>
+        <p style="margin:0 0 20px;font-size:32px;letter-spacing:8px;font-weight:700;color:${INK};font-family:ui-monospace,monospace;">${opts.code}</p>
+        <p style="margin:0;color:#94a3b8;font-size:13px;">The code expires in 15 minutes. If you didn't request this, you can ignore this email — nothing is shared without the code.</p>`,
+    }),
+    text: `You asked to view the confidential business profile for ${opts.orgName}.\n\nYour verification code: ${opts.code}\n\nThe code expires in 15 minutes. If you didn't request this, ignore this email — nothing is shared without the code.`,
+  };
+}
+
 export function documentRequestEmail(opts: {
   name?: string;
   orgName: string;

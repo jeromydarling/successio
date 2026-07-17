@@ -153,6 +153,18 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const db = drizzle(e.DB, { schema });
+
+  // Per-org quota (mirrors documents.requestUpload).
+  const { count, eq: eqOp } = await import("drizzle-orm");
+  const docCount = await db
+    .select({ n: count() })
+    .from(schema.documents)
+    .where(eqOp(schema.documents.orgId, session.orgId))
+    .get();
+  if ((docCount?.n ?? 0) >= 2000) {
+    return new Response("Document limit reached — contact support", { status: 403 });
+  }
+
   const files = body.files.slice(0, MAX_FILES);
   const results: { name: string; ok: boolean; documentId?: string; error?: string }[] = [];
 

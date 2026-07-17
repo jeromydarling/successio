@@ -37,8 +37,13 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
   // NDA gate state
   const [ndaName, setNdaName] = useState("");
   const [ndaEmail, setNdaEmail] = useState("");
+  const [ndaAgreed, setNdaAgreed] = useState(false);
   const [ndaAccepted, setNdaAccepted] = useState(false);
   const [ndaSubmitting, setNdaSubmitting] = useState(false);
+  // Email verification step (real orgs): a 6-digit code sent to the address.
+  const [ndaStep, setNdaStep] = useState<"form" | "code">("form");
+  const [ndaCode, setNdaCode] = useState("");
+  const [ndaError, setNdaError] = useState("");
 
   // Engagement tracking: which sections the visitor actually scrolled to, and
   // for how long they had the page open. Flushed via sendBeacon on page hide.
@@ -51,15 +56,21 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
     params.then((p) => setToken(p.token));
   }, [params]);
 
-  const logView = useCallback(async (tok: string, extra?: { name?: string; email?: string }) => {
+  const logView = useCallback(async (tok: string, extra?: { name?: string; email?: string; code?: string }) => {
     try {
       const res = await fetch(`/api/share/${tok}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(extra ?? {}),
       });
-      if (!res.ok) return null;
-      const json = (await res.json()) as { viewId?: string; profile?: Record<string, string>; org?: ShareData["org"] };
+      const json = (await res.json().catch(() => ({}))) as {
+        viewId?: string;
+        profile?: Record<string, string>;
+        org?: ShareData["org"];
+        verificationRequired?: boolean;
+        codeExpired?: boolean;
+        error?: string;
+      };
       if (json.viewId) viewIdRef.current = json.viewId;
       return json;
     } catch {
@@ -106,12 +117,8 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
       .finally(() => setLoading(false));
   }, [token, logView]);
 
-  const submitNda = async () => {
-    if (!token || !ndaName || !ndaEmail) return;
-    setNdaSubmitting(true);
-    // The server releases the full confidential payload only in this response.
-    const result = await logView(token, { name: ndaName, email: ndaEmail });
-    if (result?.profile) {
+  const applyRelease = (result: { profile?: Record<string, string>; org?: ShareData["org"] }) => {
+    if (result.profile) {
       setData((prev) =>
         prev
           ? { ...prev, profile: result.profile!, org: { ...prev.org, ...result.org } }
@@ -119,6 +126,38 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
       );
     }
     setNdaAccepted(true);
+  };
+
+  const submitNda = async () => {
+    if (!token || !ndaName || !ndaEmail || !ndaAgreed) return;
+    setNdaSubmitting(true);
+    setNdaError("");
+    const result = await logView(token, { name: ndaName, email: ndaEmail });
+    if (result?.verificationRequired) {
+      // Real orgs: a code was emailed — collect it before anything releases.
+      setNdaStep("code");
+    } else if (result?.profile) {
+      applyRelease(result);
+    } else {
+      setNdaError(result?.error ?? "Something went wrong — try again.");
+    }
+    setNdaSubmitting(false);
+  };
+
+  const submitCode = async () => {
+    if (!token || ndaCode.length !== 6) return;
+    setNdaSubmitting(true);
+    setNdaError("");
+    const result = await logView(token, { name: ndaName, email: ndaEmail, code: ndaCode });
+    if (result?.profile) {
+      applyRelease(result);
+    } else {
+      setNdaError(result?.error ?? "Incorrect code — try again.");
+      if (result?.codeExpired) {
+        setNdaStep("form");
+        setNdaCode("");
+      }
+    }
     setNdaSubmitting(false);
   };
 
@@ -191,34 +230,85 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
                 <Lock className="size-5 text-amber" />
                 <h2 className="text-base font-semibold text-ink">Confidential Information</h2>
               </div>
-              <p className="text-sm text-ink-soft mb-5">
-                This profile contains non-public financial and operational information shared in confidence.
-                By entering your details below, you agree to keep this information confidential and use it
-                only for evaluating a potential acquisition.
-              </p>
-              <div className="space-y-3">
-                <input
-                  value={ndaName}
-                  onChange={(e) => setNdaName(e.target.value)}
-                  placeholder="Full name"
-                  className="input-base"
-                />
-                <input
-                  value={ndaEmail}
-                  onChange={(e) => setNdaEmail(e.target.value)}
-                  placeholder="Email address"
-                  type="email"
-                  className="input-base"
-                />
-                <Button
-                  onClick={submitNda}
-                  disabled={!ndaName || !ndaEmail || ndaSubmitting}
-                  className="w-full"
-                >
-                  {ndaSubmitting ? <Loader2 className="size-4 animate-spin" /> : <Lock className="size-4" />}
-                  I agree — view the full profile
-                </Button>
-              </div>
+              {ndaStep === "form" ? (
+                <>
+                  <div className="mb-5 max-h-40 overflow-y-auto rounded-xl border border-edge bg-canvas/60 p-4 text-xs leading-relaxed text-ink-soft">
+                    <p className="mb-2 font-semibold text-ink">Confidentiality Agreement</p>
+                    <p className="mb-2">
+                      This profile contains non-public financial and operational information about a
+                      privately held business, shared with you in confidence solely to evaluate a
+                      potential acquisition or financing.
+                    </p>
+                    <p className="mb-2">By continuing, you agree that you will:</p>
+                    <p className="mb-1">1. Keep all information strictly confidential and not disclose it to any third party;</p>
+                    <p className="mb-1">2. Use it only to evaluate this opportunity — never for competitive purposes or to solicit the business&apos;s customers or employees;</p>
+                    <p className="mb-2">3. Not copy, distribute, or retain the materials if you do not proceed.</p>
+                    <p>Your name, verified email, viewing activity, and the time of this agreement are recorded and available to the business owner.</p>
+                  </div>
+                  <div className="space-y-3">
+                    <input
+                      value={ndaName}
+                      onChange={(e) => setNdaName(e.target.value)}
+                      placeholder="Full name"
+                      className="input-base"
+                    />
+                    <input
+                      value={ndaEmail}
+                      onChange={(e) => setNdaEmail(e.target.value)}
+                      placeholder="Email address"
+                      type="email"
+                      className="input-base"
+                    />
+                    <label className="flex items-start gap-2.5 text-xs leading-relaxed text-ink-soft">
+                      <input
+                        type="checkbox"
+                        checked={ndaAgreed}
+                        onChange={(e) => setNdaAgreed(e.target.checked)}
+                        className="mt-0.5 size-4 rounded border-edge accent-amber-500"
+                      />
+                      <span>
+                        I have read and agree to the confidentiality terms above, and I confirm the
+                        email address is mine.
+                      </span>
+                    </label>
+                    {ndaError && <p className="text-xs text-red-400">{ndaError}</p>}
+                    <Button
+                      onClick={submitNda}
+                      disabled={!ndaName || !ndaEmail || !ndaAgreed || ndaSubmitting}
+                      className="w-full"
+                    >
+                      {ndaSubmitting ? <Loader2 className="size-4 animate-spin" /> : <Lock className="size-4" />}
+                      I agree — continue
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-sm text-ink-soft">
+                    We emailed a 6-digit code to <span className="font-medium text-ink">{ndaEmail}</span>.
+                    Enter it below — the confidential profile releases only after your email is verified.
+                  </p>
+                  <input
+                    value={ndaCode}
+                    onChange={(e) => setNdaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    placeholder="6-digit code"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    className="input-base text-center font-mono text-lg tracking-[0.5em]"
+                  />
+                  {ndaError && <p className="text-xs text-red-400">{ndaError}</p>}
+                  <Button onClick={submitCode} disabled={ndaCode.length !== 6 || ndaSubmitting} className="w-full">
+                    {ndaSubmitting ? <Loader2 className="size-4 animate-spin" /> : <Lock className="size-4" />}
+                    Verify & view profile
+                  </Button>
+                  <button
+                    onClick={() => { setNdaStep("form"); setNdaCode(""); setNdaError(""); }}
+                    className="w-full text-center text-xs text-ink-faint hover:text-ink-soft"
+                  >
+                    Didn&apos;t get it? Check spam, or go back and resend
+                  </button>
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>

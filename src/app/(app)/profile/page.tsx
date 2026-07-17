@@ -80,6 +80,18 @@ export default function ProfilePage() {
     onSuccess: () => utils.profiles.listDocumentRequests.invalidate(),
   });
 
+  const [auditIssues, setAuditIssues] = useState<{ figure: string; section: string }[] | null>(null);
+  const publishMutation = trpc.profiles.publish.useMutation({
+    onSuccess: (res) => {
+      if (res.published) {
+        setAuditIssues(null);
+        utils.profiles.get.invalidate();
+      } else {
+        setAuditIssues(res.issues);
+      }
+    },
+  });
+
   const generateMutation = trpc.profiles.generate.useMutation({
     onSuccess: () => {
       utils.profiles.get.invalidate();
@@ -128,7 +140,9 @@ export default function ProfilePage() {
                   <span className="font-mono text-amber-bright">{score?.score ?? "—"}</span> / 100
                 </p>
                 {profile && (
-                  <p className="mt-1 text-xs text-emerald-400">Profile generated</p>
+                  <p className={cn("mt-1 text-xs", profile.isDraft ? "text-amber" : "text-emerald-400")}>
+                    {profile.isDraft ? "Profile generated — draft, not yet publishable" : "Profile generated"}
+                  </p>
                 )}
               </div>
               <div className="flex items-center gap-2">
@@ -170,6 +184,66 @@ export default function ProfilePage() {
               </div>
             )}
           </div>
+
+          {/* Draft review & publish — sharing is locked until this passes */}
+          {profile?.isDraft && (
+            <div className="rounded-2xl border border-amber/30 bg-amber/[0.05] p-6">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber" />
+                <div className="flex-1">
+                  <h3 className="text-sm font-semibold text-ink">Review before anyone else sees this</h3>
+                  <p className="mt-1 text-sm leading-relaxed text-ink-soft">
+                    The AI drafted this profile from your records. Read every section below like a
+                    buyer will — especially the numbers. Publishing runs an automatic check that every
+                    dollar figure and percentage traces back to your actual data. Share links stay
+                    locked until you publish.
+                  </p>
+
+                  {auditIssues && auditIssues.length > 0 && (
+                    <div className="mt-4 rounded-xl border border-orange-500/30 bg-orange-500/[0.06] p-4">
+                      <p className="text-sm font-medium text-ink">
+                        {auditIssues.length} figure{auditIssues.length > 1 ? "s" : ""} couldn&apos;t be traced to your records:
+                      </p>
+                      <ul className="mt-2 space-y-1">
+                        {auditIssues.map((iss, i) => (
+                          <li key={i} className="text-xs text-orange-300">
+                            <span className="font-mono font-semibold">{iss.figure}</span>
+                            <span className="text-ink-faint"> in {SECTION_LABELS[iss.section] ?? iss.section}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="mt-3 text-xs leading-relaxed text-ink-soft">
+                        Verify each one against your books. If a number is wrong, fix the source on{" "}
+                        <a href="/data" className="text-amber underline underline-offset-2">Business Data</a>{" "}
+                        and regenerate. If you&apos;ve checked them and they&apos;re right, you can publish anyway.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => publishMutation.mutate({ acknowledgeIssues: false })}
+                      disabled={publishMutation.isPending}
+                    >
+                      {publishMutation.isPending ? <RefreshCw className="size-4 animate-spin" /> : <Check className="size-4" />}
+                      I&apos;ve reviewed it — publish
+                    </Button>
+                    {auditIssues && auditIssues.length > 0 && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => publishMutation.mutate({ acknowledgeIssues: true })}
+                        disabled={publishMutation.isPending}
+                      >
+                        I verified these numbers — publish anyway
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Profile preview */}
           <AnimatePresence>
