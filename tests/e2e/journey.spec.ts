@@ -294,6 +294,10 @@ test("9) public deal room: teaser, NDA gate, on-demand translation", async ({ br
   await expect(share.getByText(/Confidential Information/i)).toBeVisible({ timeout: 15_000 });
   await share.getByPlaceholder("Full name").fill("Jane Buyer");
   await share.getByPlaceholder("Email address").fill("jane@example.com");
+  // Confidentiality terms checkbox (required before the gate submits).
+  await share.getByRole("checkbox").check();
+  // E2E orgs keep the single-step gate (no email code) — the payload releases
+  // directly on submit. Real orgs get a 6-digit email verification here.
   await share.getByRole("button", { name: /i agree/i }).click();
   // The confidential Financial Highlights section is released only after the gate.
   await expect(share.getByRole("heading", { name: /financial highlights/i })).toBeVisible({ timeout: 15_000 });

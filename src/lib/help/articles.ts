@@ -399,9 +399,13 @@ Press **Generate profile**. The AI drafts nine sections from your record:
 
 Everything is drawn from your documents and Business Data — financials come from your recorded years (one figure per year, reconciled), customers from your customer table, operations from your SOPs. The AI writes the narrative; it doesn't invent the facts.
 
-## Review it like a buyer will
+## Review it like a buyer will — then publish
 
-Expand each section in the preview and read it. If a fact is wrong, fix the **source** — the record on [Business Data](/data) — then press **Regenerate profile**. The profile always reflects your current record, so keeping the record right keeps the profile right.
+A freshly generated profile is a **draft**: share links stay locked until you review and publish it. Expand each section and read it like a buyer will. If a fact is wrong, fix the **source** — the record on [Business Data](/data) — then press **Regenerate profile**.
+
+When you press **publish**, an automatic check verifies that **every dollar figure and percentage in the narrative traces back to your actual records**. Anything it can't trace is listed for you to verify by hand — you can fix the source and regenerate, or confirm the numbers yourself and publish anyway. Nothing AI-written reaches a buyer without your sign-off.
+
+One more protection, on by design: the profile **never names your employees** — people are described by role and tenure only ("a shop foreman with 18 years"), because this document circulates before your crew knows the business is for sale.
 
 ## PDF export
 
@@ -421,7 +425,7 @@ Sharing is deliberate and layered: you choose exactly how much each person sees,
 ## The four tiers
 
 - **Teaser (public)** — business name, industry, general description, the opportunity. **No financials, no customer details.** Safe to post anywhere; anyone with the link can see it.
-- **NDA-gated** — the full profile including financial highlights and customer overview. Viewers must enter their **name and email** and agree to confidentiality before anything confidential loads. The gate is enforced by the server, not just hidden on the page.
+- **NDA-gated** — the full profile including financial highlights and customer overview. Viewers must enter their name and email, agree to written confidentiality terms, and then **verify the email with a 6-digit code we send to it** — nothing confidential loads until the code checks out, and the gate is enforced by the server, not just hidden on the page. The verified email lands in your access log.
 - **Lender Package** — for banks, SBA lenders, and CDFIs: the full profile plus a downloadable data bundle (financial years, customer list, equipment, procedures) in a structured format their analysts can work with.
 - **Buyer Access** — everything in the NDA tier, plus the viewer can **request specific documents** from you. Nothing is auto-released; see [Buyer document requests](/help/buyer-requests).
 

@@ -405,6 +405,26 @@ export const documentRequests = sqliteTable(
   ]
 );
 
+// Email verification for the NDA gate: a viewer must prove control of the
+// email they enter before confidential tiers release. One active code per
+// (token, email); codes are stored hashed and expire quickly.
+export const shareVerifications = sqliteTable(
+  "share_verifications",
+  {
+    id: text("id").primaryKey(),
+    tokenId: text("token_id")
+      .notNull()
+      .references(() => shareTokens.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    codeHash: text("code_hash").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+    verifiedAt: integer("verified_at", { mode: "timestamp" }),
+    ...timestamps,
+  },
+  (t) => [index("share_verif_token_email_idx").on(t.tokenId, t.email)]
+);
+
 export const shareViews = sqliteTable(
   "share_views",
   {

@@ -17,6 +17,21 @@ export const documentsRouter = router({
     .input(uploadRequestSchema)
     .mutation(async ({ input, ctx }) => {
       const { orgId } = ctx.session;
+
+      // Per-org quota: generous for any real business, a wall for abuse.
+      const { count } = await import("drizzle-orm");
+      const docCount = await ctx.db
+        .select({ n: count() })
+        .from(documents)
+        .where(eq(documents.orgId, orgId))
+        .get();
+      if ((docCount?.n ?? 0) >= 2000) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "This account has reached its 2,000-document limit — contact support to raise it.",
+        });
+      }
+
       const documentId = nanoid();
       const r2Key = documentKey(orgId, documentId, input.filename);
 

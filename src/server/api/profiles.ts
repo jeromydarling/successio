@@ -26,6 +26,7 @@ import { buildProfilePrompt } from "@/prompts/manufacturing/profile";
 import { renderProfilePdf } from "@/lib/pdf";
 import { nanoid } from "@/lib/nanoid";
 import { dedupeFinancialsByYear } from "@/lib/financials";
+import { auditProfileNumbers } from "@/lib/profile-audit";
 
 const SECTION_LABELS: Record<string, string> = {
   executive_summary:    "Executive Summary",
@@ -81,7 +82,8 @@ export const profilesRouter = router({
       org,
       customers: custs.map(c => ({ name: c.name, revenueShare: c.revenueShare, contractStatus: c.contractStatus })),
       financials: dedupeFinancialsByYear(fins).map(f => ({ year: f.year, revenue: f.revenue, grossProfit: f.grossProfit, ebitda: f.ebitda, ownerCompensation: f.ownerCompensation })),
-      employees: emps.map(e => ({ name: e.name, role: e.role, tenureYears: e.tenureYears, isKeyPerson: e.isKeyPerson ?? false })),
+      // Names withheld by design — see the prompt's anonymity rule.
+      employees: emps.map(e => ({ role: e.role, tenureYears: e.tenureYears, isKeyPerson: e.isKeyPerson ?? false })),
       processes: procs.map(p => ({ title: p.title, steps: p.steps })),
       equipment: equips.map(e => ({ name: e.name, manufacturer: e.manufacturer, yearInstalled: e.yearInstalled, estimatedValue: e.estimatedValue })),
     });
@@ -104,10 +106,12 @@ export const profilesRouter = router({
       .limit(1)
       .get();
 
+    // Drafts by default: an AI-written narrative about someone's life work
+    // is never shareable until the owner has reviewed and published it.
     if (existing) {
       await ctx.db
         .update(businessProfiles)
-        .set({ content: JSON.stringify(content), isDraft: false })
+        .set({ content: JSON.stringify(content), isDraft: true })
         .where(eq(businessProfiles.id, existing.id));
       return { profileId: existing.id, content };
     }
@@ -118,7 +122,7 @@ export const profilesRouter = router({
       orgId,
       title: `${org.name} — Business Profile`,
       content: JSON.stringify(content),
-      isDraft: false,
+      isDraft: true,
     });
     return { profileId, content };
   }),
@@ -141,6 +145,49 @@ export const profilesRouter = router({
 
     return { ...profile, content };
   }),
+
+  /**
+   * Owner reviews the draft and publishes it. Every dollar figure and
+   * percentage in the narrative is audited against the org's actual records;
+   * unmatched figures block publication unless the owner explicitly
+   * acknowledges each one as verified. Sharing requires a published profile.
+   */
+  publish: protectedProcedure
+    .input(z.object({ acknowledgeIssues: z.boolean().default(false) }))
+    .mutation(async ({ input, ctx }) => {
+      const { orgId } = ctx.session;
+
+      const [profile, org, custs, fins, equips] = await Promise.all([
+        ctx.db.select().from(businessProfiles).where(eq(businessProfiles.orgId, orgId)).orderBy(desc(businessProfiles.createdAt)).limit(1).get(),
+        ctx.db.select().from(organizations).where(eq(organizations.id, orgId)).get(),
+        ctx.db.select({ revenueShare: customers.revenueShare }).from(customers).where(eq(customers.orgId, orgId)).all(),
+        ctx.db.select().from(financials).where(eq(financials.orgId, orgId)).all(),
+        ctx.db.select({ estimatedValue: equipment.estimatedValue }).from(equipment).where(eq(equipment.orgId, orgId)).all(),
+      ]);
+
+      if (!profile) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Generate a profile first" });
+
+      let content: Record<string, string> = {};
+      try { content = JSON.parse(profile.content); } catch { /* empty */ }
+
+      const issues = auditProfileNumbers(content, {
+        financials: dedupeFinancialsByYear(fins),
+        customers: custs,
+        equipment: equips,
+        org: { annualRevenue: org?.annualRevenue, employeeCount: org?.employeeCount, founded: org?.founded },
+      });
+
+      if (issues.length > 0 && !input.acknowledgeIssues) {
+        return { published: false, issues };
+      }
+
+      await ctx.db
+        .update(businessProfiles)
+        .set({ isDraft: false })
+        .where(eq(businessProfiles.id, profile.id));
+
+      return { published: true, issues };
+    }),
 
   /** Render the latest profile to a PDF, store it in R2, return a download URL. */
   exportPdf: protectedProcedure.mutation(async ({ ctx }) => {
@@ -199,9 +246,10 @@ export const profilesRouter = router({
     .mutation(async ({ input, ctx }) => {
       const { orgId } = ctx.session;
 
-      // Need a profile to attach the token to
+      // Need a REVIEWED profile to attach the token to — drafts never leave
+      // the building.
       const profile = await ctx.db
-        .select({ id: businessProfiles.id })
+        .select({ id: businessProfiles.id, isDraft: businessProfiles.isDraft })
         .from(businessProfiles)
         .where(eq(businessProfiles.orgId, orgId))
         .orderBy(desc(businessProfiles.createdAt))
@@ -209,6 +257,12 @@ export const profilesRouter = router({
         .get();
 
       if (!profile) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Generate a profile first" });
+      if (profile.isDraft) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Review and publish your profile before sharing it.",
+        });
+      }
 
       const days =
         input.expiresInDays !== undefined

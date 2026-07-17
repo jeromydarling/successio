@@ -130,6 +130,34 @@ export default function SettingsPage() {
             </div>
           )}
 
+          {/* Billing */}
+          <div className="rounded-2xl border border-edge bg-canvas-soft/50 p-7">
+            <h2 className="text-lg font-semibold text-ink">Billing</h2>
+            <p className="mt-1.5 text-sm leading-relaxed text-ink-soft">
+              Successio is free while you get set up. When you&apos;re ready, the Owner plan is
+              $49/month (or $39/month billed annually) with a 14-day free trial — cancel anytime.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <a
+                href="https://buy.stripe.com/28EfZidRdes9c1JbMges001"
+                className="rounded-xl bg-amber px-4 py-2 text-sm font-semibold text-slate-900 transition-colors hover:bg-amber-bright"
+              >
+                Subscribe monthly — $49/mo
+              </a>
+              <a
+                href="https://buy.stripe.com/aFaeVedRd3Nv9TBeYses002"
+                className="rounded-xl border border-edge px-4 py-2 text-sm font-medium text-ink-soft transition-colors hover:border-edge-strong hover:text-ink"
+              >
+                Annual — $39/mo, save 20%
+              </a>
+            </div>
+            <p className="mt-3 text-xs text-ink-faint">
+              Checkout is handled securely by Stripe. Use the email on this account so we can match
+              your subscription. Full pricing on the{" "}
+              <a href="/pricing" className="text-amber underline underline-offset-2">pricing page</a>.
+            </p>
+          </div>
+
           <form
             onSubmit={handleSubmit(onSubmit)}
             className="rounded-2xl border border-edge bg-canvas-soft/50 p-7 space-y-5"

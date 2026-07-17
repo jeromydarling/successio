@@ -1,10 +1,12 @@
-export const PROFILE_PROMPT_VERSION = "manufacturing-profile-v1";
+export const PROFILE_PROMPT_VERSION = "manufacturing-profile-v2";
 
 interface ProfileContext {
   org: { name: string; vertical: string; location?: string | null; founded?: number | null; employeeCount?: number | null; annualRevenue?: number | null; description?: string | null };
   customers: Array<{ name: string; revenueShare?: number | null; contractStatus?: string | null }>;
   financials: Array<{ year: number; revenue?: number | null; grossProfit?: number | null; ebitda?: number | null; ownerCompensation?: number | null }>;
-  employees: Array<{ name: string; role: string; tenureYears?: number | null; isKeyPerson: boolean }>;
+  // Deliberately no names — shared profiles must never identify individual
+  // employees. Roles + tenure carry the signal buyers need.
+  employees: Array<{ role: string; tenureYears?: number | null; isKeyPerson: boolean }>;
   processes: Array<{ title: string; steps: string }>;
   equipment: Array<{ name: string; manufacturer?: string | null; yearInstalled?: number | null; estimatedValue?: number | null }>;
 }
@@ -34,5 +36,9 @@ Return ONLY valid JSON with this exact structure:
 }
 
 Write each section as polished prose — no bullet points, no markdown, no headers within the field. The JSON must parse cleanly.
+
+Hard rules:
+- NEVER name an individual employee anywhere in any section. Refer to people only by role and tenure ("a shop foreman with 18 years at the company"). This document circulates to strangers before the team knows the business is for sale.
+- NEVER state a dollar amount or percentage that is not present in (or directly computable from) the business_data above. If a number is unknown, say so plainly instead of estimating.
 </instruction>`;
 }
