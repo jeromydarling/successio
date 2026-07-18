@@ -61,7 +61,11 @@ async function purge(p: Page, email: string) {
 }
 
 test.beforeAll(async ({ browser }) => {
-  page = await browser.newPage();
+  page = await browser.newPage({
+    // Skips ONLY rate limiting on auth endpoints (secret-gated server-side) —
+    // CI performs many signups per run from one IP; see guardRate in auth.ts.
+    extraHTTPHeaders: TOKEN ? { "x-e2e-bypass": TOKEN } : {},
+  });
 });
 
 test.afterAll(async () => {
@@ -129,6 +133,9 @@ test("fresh signup lands on the onboarding checklist, steps complete from real d
 
   // Completing business details in Settings completes step 1 automatically.
   await page.goto("/settings");
+  // Wait for the org query to hydrate the form — filling before hydration
+  // gets wiped by the values sync (also fixed product-side, belt+suspenders).
+  await expect(page.getByPlaceholder("Brenner Precision Machining")).toHaveValue(A_BUSINESS, { timeout: 15_000 });
   await page.getByPlaceholder("Akron, Ohio").fill("E2E City, OH");
   // exact: the description textarea's placeholder also contains "1987".
   await page.getByPlaceholder("1987", { exact: true }).fill("1990");
