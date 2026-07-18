@@ -101,6 +101,7 @@ export interface ExtractionParams {
     CF_AI_GATEWAY_ID: string;
     ANTHROPIC_API_KEY?: string;
     GOOGLE_AI_API_KEY?: string;
+    CF_AIG_TOKEN?: string;
   };
 }
 

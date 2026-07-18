@@ -44,6 +44,7 @@ interface PipelineEnv {
   ANTHROPIC_API_KEY?: string;
   GOOGLE_AI_API_KEY?: string;
   MISTRAL_API_KEY?: string;
+  CF_AIG_TOKEN?: string;
   // Email Sending — same bindings/vars declared in wrangler.toml.
   EMAIL?: { send: (m: unknown) => Promise<{ messageId?: string }> };
   CF_API_TOKEN?: string;
