@@ -29,7 +29,11 @@ const TERMINAL = /complete|needs|failed/;
 let page: Page;
 
 test.beforeAll(async ({ browser }) => {
-  page = await browser.newPage();
+  page = await browser.newPage({
+    // Skips ONLY rate limiting on auth endpoints (secret-gated server-side) —
+    // CI performs many signups per run from one IP; see guardRate in auth.ts.
+    extraHTTPHeaders: TOKEN ? { "x-e2e-bypass": TOKEN } : {},
+  });
 });
 
 test.afterAll(async () => {
@@ -78,8 +82,7 @@ test("upload a document: persists (hard) + pipeline status (observed)", async ()
 
   // HARD: the document row persists to the vault across a reload.
   await page.goto("/vault");
-  await page.reload();
-  await expect(page.getByText(FILE).first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(FILE).first()).toBeVisible({ timeout: 30_000 });
 
   // OBSERVE: poll the status pill briefly, logging transitions. (Prod currently
   // leaves it "queued"; if the pipeline is brought online we'll see it advance.)

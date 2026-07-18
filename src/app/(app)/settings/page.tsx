@@ -36,6 +36,10 @@ export default function SettingsPage() {
   const sendVerify = trpc.auth.sendVerificationEmail.useMutation();
 
   const { register, handleSubmit, formState: { errors, isDirty } } = useForm<SettingsFormRaw>({
+    // When the org query resolves after the user has started typing, keep
+    // their keystrokes — without this, the async `values` sync resets the
+    // form and silently wipes everything they entered.
+    resetOptions: { keepDirtyValues: true },
     values: org
       ? {
           name: org.name,
@@ -196,6 +200,9 @@ export default function SettingsPage() {
               </Button>
               {updateOrg.isSuccess && (
                 <span className="text-sm text-emerald-400">Saved!</span>
+              )}
+              {updateOrg.error && (
+                <span className="text-sm text-red-400">{updateOrg.error.message}</span>
               )}
             </div>
           </form>

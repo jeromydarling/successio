@@ -13,6 +13,7 @@ import {
   revokeAllUserSessions,
 } from "@/lib/auth";
 import { rateLimit, sha256Hex } from "@/lib/rate-limit";
+import { timingSafeEqual } from "@/lib/timing-safe-equal";
 import { signupSchema, loginSchema } from "@/types";
 import { nanoid } from "@/lib/nanoid";
 import { getEmailSender } from "@/lib/email/sender";
@@ -31,6 +32,14 @@ async function guardRate(
   windowSeconds: number
 ): Promise<void> {
   if (!ctx.env.SESSIONS) return; // no KV bound (local dev) — skip
+  // CI bypass: one E2E run performs ~10+ signups from a single runner IP
+  // (each serial retry re-registers its accounts), which trips the limits
+  // meant for humans. The bypass is gated on the E2E admin secret sent as a
+  // header — it skips ONLY rate limiting, never authentication.
+  const bypass = ctx.req.headers.get("x-e2e-bypass");
+  if (bypass && ctx.env.E2E_ADMIN_TOKEN && timingSafeEqual(bypass, ctx.env.E2E_ADMIN_TOKEN)) {
+    return;
+  }
   const ip = ctx.req.headers.get("cf-connecting-ip") ?? "unknown";
   const key = `${bucket}:${await sha256Hex(`${ip}:${id}`)}`;
   const { allowed } = await rateLimit(ctx.env.SESSIONS, key, limit, windowSeconds);

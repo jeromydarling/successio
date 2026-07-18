@@ -28,7 +28,11 @@ let publicToken = "";
 let ndaToken = "";
 
 test.beforeAll(async ({ browser }) => {
-  page = await browser.newPage();
+  page = await browser.newPage({
+    // Skips ONLY rate limiting on auth endpoints (secret-gated server-side) —
+    // CI performs many signups per run from one IP; see guardRate in auth.ts.
+    extraHTTPHeaders: TOKEN ? { "x-e2e-bypass": TOKEN } : {},
+  });
 });
 
 test.afterAll(async () => {
