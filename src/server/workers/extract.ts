@@ -86,6 +86,46 @@ const extractionOutputSchema = z.object({
 
 type ExtractionOutput = z.infer<typeof extractionOutputSchema>;
 
+/**
+ * Lenient parse: validate each extracted item individually and keep the valid
+ * ones, dropping malformed items with a log. The previous all-or-nothing
+ * parse meant one bad record (seen in prod: a financials entry the model
+ * emitted without a year) threw away an entire extraction — including
+ * perfectly good customers — and flagged the document for review.
+ */
+export function parseLenientExtraction(raw: unknown): ExtractionOutput {
+  if (typeof raw !== "object" || raw === null) {
+    throw new Error("extraction output is not an object");
+  }
+  const obj = raw as Record<string, unknown>;
+
+  const salvage = <T>(schema: z.ZodType<T>, items: unknown, kind: string): T[] => {
+    if (!Array.isArray(items)) return [];
+    const out: T[] = [];
+    for (const item of items) {
+      const parsed = schema.safeParse(item);
+      if (parsed.success) {
+        out.push(parsed.data);
+      } else {
+        console.warn(`[extract] dropped invalid ${kind}:`, parsed.error.issues[0]?.message);
+      }
+    }
+    return out;
+  };
+
+  return {
+    document_type_detected:
+      typeof obj.document_type_detected === "string" ? obj.document_type_detected : undefined,
+    summary: typeof obj.summary === "string" ? obj.summary : undefined,
+    customers: salvage(extractedCustomer, obj.customers, "customer"),
+    equipment: salvage(extractedEquipment, obj.equipment, "equipment"),
+    financials: salvage(extractedFinancial, obj.financials, "financial"),
+    employees: salvage(extractedEmployee, obj.employees, "employee"),
+    processes: salvage(extractedProcess, obj.processes, "process"),
+    milestones: salvage(extractedMilestone, obj.milestones, "milestone"),
+  };
+}
+
 // ── Main extraction function ──────────────────────────────────────────────────
 
 export interface ExtractionParams {
@@ -128,7 +168,7 @@ export async function runExtraction(params: ExtractionParams): Promise<void> {
 
   const attempt = async (model: string): Promise<ExtractionOutput> => {
     const result = await gateway.complete({ model, messages, max_tokens: 4096, temperature: 0 });
-    return extractionOutputSchema.parse(JSON.parse(extractJson(result.content)));
+    return parseLenientExtraction(JSON.parse(extractJson(result.content)));
   };
 
   try {
