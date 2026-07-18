@@ -189,13 +189,21 @@ export class AIGateway {
   }
 
   /** Convert a document (PDF/DOCX/XLSX/CSV/HTML/JSON…) to Markdown via the
-   *  native Workers AI binding. Returns "" on unsupported/empty/error. */
+   *  native Workers AI binding. Returns "" on unsupported/empty/error — it
+   *  must NEVER throw: the OCR chain has plain-text and raster fallbacks that
+   *  handle "" fine, whereas a throw fails the whole workflow step (seen in
+   *  prod as AiInternalError on a simple CSV, killing the document). */
   async toMarkdown(name: string, bytes: ArrayBuffer): Promise<string> {
-    const results = (await (this.env.AI as any).toMarkdown([
-      { name, blob: new Blob([bytes]) },
-    ])) as { format?: string; data?: string }[] | { format?: string; data?: string };
-    const first = Array.isArray(results) ? results[0] : results;
-    return first?.format === "markdown" ? (first.data ?? "") : "";
+    try {
+      const results = (await (this.env.AI as any).toMarkdown([
+        { name, blob: new Blob([bytes]) },
+      ])) as { format?: string; data?: string }[] | { format?: string; data?: string };
+      const first = Array.isArray(results) ? results[0] : results;
+      return first?.format === "markdown" ? (first.data ?? "") : "";
+    } catch (err) {
+      console.warn(`[ai-gateway] toMarkdown failed for ${name} — falling back:`, err);
+      return "";
+    }
   }
 
   /** Transcribe text from an image using a Workers AI vision model.
