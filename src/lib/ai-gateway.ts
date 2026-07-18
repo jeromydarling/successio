@@ -65,13 +65,26 @@ export class AIGateway {
   constructor(
     private accountId: string,
     private gatewayId: string,
-    private env: { AI: Ai; ANTHROPIC_API_KEY?: string; GOOGLE_AI_API_KEY?: string; MISTRAL_API_KEY?: string }
+    private env: {
+      AI: Ai;
+      ANTHROPIC_API_KEY?: string;
+      GOOGLE_AI_API_KEY?: string;
+      MISTRAL_API_KEY?: string;
+      /** AI Gateway authentication token (cf-aig-authorization) — required
+       *  when the gateway has Authenticated Gateway enabled. */
+      CF_AIG_TOKEN?: string;
+    }
   ) {
     this.baseUrl = `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}`;
   }
 
   /** Call a chat-completion model. `@cf/*` models run on Workers AI directly;
-   *  everything else routes through the AI Gateway to an external provider. */
+   *  everything else routes through the AI Gateway to an external provider —
+   *  and if the external path fails for ANY reason (gateway auth, provider
+   *  outage, bad key), we degrade to the Workers AI default model rather
+   *  than failing the caller. Availability beats model choice: a document
+   *  pipeline or profile draft must never die on provider config.
+   */
   async complete(opts: GatewayRequestOptions): Promise<GatewayResponse> {
     const provider = this.providerFromModel(opts.model);
 
@@ -79,6 +92,22 @@ export class AIGateway {
     if (provider === "workers-ai") {
       return this.completeWorkersAI(opts);
     }
+
+    try {
+      return await this.completeExternal(provider, opts);
+    } catch (err) {
+      console.error(
+        `[ai-gateway] external call failed (${opts.model}) — degrading to Workers AI:`,
+        err
+      );
+      return this.completeWorkersAI({ ...opts, model: MODELS.extraction });
+    }
+  }
+
+  private async completeExternal(
+    provider: string,
+    opts: GatewayRequestOptions
+  ): Promise<GatewayResponse> {
 
     if (!this.accountId) {
       throw new Error("[ai-gateway] CF_ACCOUNT_ID required for external provider calls");
@@ -126,12 +155,17 @@ export class AIGateway {
     }
   }
 
-  /** Each provider expects its own auth header scheme. */
+  /** Each provider expects its own auth header scheme. When the gateway has
+   *  Authenticated Gateway enabled, every request additionally needs the
+   *  cf-aig-authorization header or it 401s before reaching the provider. */
   private authHeadersFor(provider: string, apiKey: string): Record<string, string> {
+    const gatewayAuth: Record<string, string> = this.env.CF_AIG_TOKEN
+      ? { "cf-aig-authorization": `Bearer ${this.env.CF_AIG_TOKEN}` }
+      : {};
     switch (provider) {
-      case "anthropic":        return { "x-api-key": apiKey, "anthropic-version": "2023-06-01" };
-      case "google-ai-studio": return { "x-goog-api-key": apiKey };
-      default:                 return { Authorization: `Bearer ${apiKey}` };
+      case "anthropic":        return { ...gatewayAuth, "x-api-key": apiKey, "anthropic-version": "2023-06-01" };
+      case "google-ai-studio": return { ...gatewayAuth, "x-goog-api-key": apiKey };
+      default:                 return { ...gatewayAuth, Authorization: `Bearer ${apiKey}` };
     }
   }
 
@@ -149,6 +183,7 @@ export class AIGateway {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.env.MISTRAL_API_KEY}`,
+          ...(this.env.CF_AIG_TOKEN ? { "cf-aig-authorization": `Bearer ${this.env.CF_AIG_TOKEN}` } : {}),
         },
         body: JSON.stringify({
           model: "mistral-ocr-latest",
@@ -436,6 +471,7 @@ export function makeGateway(env: {
   ANTHROPIC_API_KEY?: string;
   GOOGLE_AI_API_KEY?: string;
   MISTRAL_API_KEY?: string;
+  CF_AIG_TOKEN?: string;
 }): AIGateway {
   // Workers AI (the default model routing) needs no account id; only external
   // providers via the gateway do. Pass it through when present.

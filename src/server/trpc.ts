@@ -49,6 +49,7 @@ export interface Context {
     ANTHROPIC_API_KEY?: string;
     GOOGLE_AI_API_KEY?: string;
     MISTRAL_API_KEY?: string;
+    CF_AIG_TOKEN?: string;
     // Token protecting the /superadmin CRM area.
     SUPER_ADMIN_TOKEN?: string;
   };
