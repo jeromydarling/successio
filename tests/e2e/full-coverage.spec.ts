@@ -189,7 +189,7 @@ test("business data: add, edit, and delete records by hand", async () => {
   await page.getByRole("button", { name: /^add$/i }).click();
   const row = page.locator("tr", { hasText: "E2E Manual Customer" });
   await expect(row).toBeVisible({ timeout: 15_000 });
-  await expect(row.getByText("Manual")).toBeVisible();
+  await expect(row.getByText("Manual", { exact: true })).toBeVisible();
 
   // Edit it.
   await row.getByRole("button", { name: "Edit" }).click();
