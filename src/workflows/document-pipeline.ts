@@ -113,6 +113,23 @@ export class DocumentPipeline extends WorkflowEntrypoint<PipelineEnv, DocumentJo
       return result.text;
     });
 
+    // No readable text → stop here. Running extraction on an empty string
+    // wastes AI calls at best and invents entities at worst; the vault shows
+    // the document as needing the owner's eyes instead.
+    if (!ocrText || ocrText.trim().length === 0) {
+      await step.do("flag_unreadable", async () => {
+        await db
+          .update(schema.documents)
+          .set({
+            status: "needs_review",
+            errorMessage:
+              "We couldn't read any text from this file. Try a clearer photo or a different export.",
+          })
+          .where(eq(schema.documents.id, documentId));
+      });
+      return;
+    }
+
     // ── Step 3: Entity extraction (Claude Sonnet via AI Gateway) ──────────────
     await step.do("extract_entities", async () => {
       const org = await db.select({ name: schema.organizations.name })
