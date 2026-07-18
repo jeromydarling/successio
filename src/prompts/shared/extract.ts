@@ -31,6 +31,7 @@ Output ONLY valid JSON matching the schema below. Do not include any explanation
 Rules:
 - Every field has a "confidence" float from 0 to 1 indicating how certain you are from the source text.
 - If you cannot find a value, omit the key entirely — do not guess.
+- NEVER emit a record that is missing its required identifying field: a financials entry without a "year", a customer or equipment entry without a "name", an employee without a "name" and "role", a process without "title" and "steps". If the required field is not in the text, omit the entire record.
 - Monetary values are always in USD as plain numbers (no $ or commas).
 - Dates are ISO-8601 strings where possible.
 - If a document contains multiple entity types, return all of them.
