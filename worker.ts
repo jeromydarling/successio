@@ -101,9 +101,20 @@ const composedHandler: ExportedHandler<WorkerEnv> = {
     await handleEmail(message as unknown as EmailMessage, env as unknown as EmailEnv);
   },
 
-  // Churn prevention cron — runs on the schedule in wrangler.toml [triggers].
+  // Daily crons — run on the schedule in wrangler.toml [triggers]. Each is
+  // independently guarded so one failing never blocks the other.
   async scheduled(_event: ScheduledController, env: WorkerEnv, ctx: ExecutionContext): Promise<void> {
-    await runChurnCron(env as ChurnEnv, ctx);
+    try {
+      await runChurnCron(env as ChurnEnv, ctx);
+    } catch (err) {
+      console.error("[cron] churn failed:", err);
+    }
+    try {
+      const { runViewDigest } = await import("./src/server/workers/view-digest");
+      await runViewDigest(env as never);
+    } catch (err) {
+      console.error("[cron] view digest failed:", err);
+    }
   },
 };
 

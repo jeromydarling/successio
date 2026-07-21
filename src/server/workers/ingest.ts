@@ -49,6 +49,9 @@ export default {
             })
             .where(eq(schema.documents.id, job.documentId));
           console.error(`[ingest:dlq] document ${job.documentId} marked failed`);
+          // Notify the owner (the workflow never ran, so its catch didn't fire).
+          const { notifyProcessingFailed } = await import("./notify-failed");
+          await notifyProcessingFailed(env as never, job.documentId);
         } catch (err) {
           console.error("[ingest:dlq] could not mark document failed:", err);
         }

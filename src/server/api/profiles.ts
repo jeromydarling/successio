@@ -27,6 +27,8 @@ import { renderProfilePdf } from "@/lib/pdf";
 import { nanoid } from "@/lib/nanoid";
 import { dedupeFinancialsByYear } from "@/lib/financials";
 import { auditProfileNumbers } from "@/lib/profile-audit";
+import { getEmailSender } from "@/lib/email/sender";
+import { documentRequestResolvedEmail } from "@/lib/email/templates";
 
 const SECTION_LABELS: Record<string, string> = {
   executive_summary:    "Executive Summary",
@@ -372,10 +374,24 @@ export const profilesRouter = router({
   }),
 
   /** Owner resolves a document request (after sending — or declining to send —
-   *  the documents through their own channel). */
+   *  the documents through their own channel). The buyer is notified so the
+   *  request never dead-ends. */
   resolveDocumentRequest: protectedProcedure
     .input(z.object({ id: z.string(), status: z.enum(["fulfilled", "declined"]) }))
     .mutation(async ({ input, ctx }) => {
+      const request = await ctx.db
+        .select({
+          requesterName: documentRequests.requesterName,
+          requesterEmail: documentRequests.requesterEmail,
+          status: documentRequests.status,
+        })
+        .from(documentRequests)
+        .where(and(
+          eq(documentRequests.id, input.id),
+          eq(documentRequests.orgId, ctx.session.orgId)
+        ))
+        .get();
+
       await ctx.db
         .update(documentRequests)
         .set({ status: input.status, resolvedAt: new Date() })
@@ -383,6 +399,29 @@ export const profilesRouter = router({
           eq(documentRequests.id, input.id),
           eq(documentRequests.orgId, ctx.session.orgId)
         ));
+
+      // Notify the buyer — only on the first resolution, best-effort.
+      if (request && request.status === "pending" && request.requesterEmail) {
+        try {
+          const org = await ctx.db
+            .select({ name: organizations.name })
+            .from(organizations)
+            .where(eq(organizations.id, ctx.session.orgId))
+            .get();
+          const mail = documentRequestResolvedEmail({
+            requesterName: request.requesterName,
+            orgName: org?.name ?? "the business",
+            status: input.status,
+          });
+          await getEmailSender(ctx.env as Parameters<typeof getEmailSender>[0]).send({
+            to: request.requesterEmail,
+            ...mail,
+          });
+        } catch (err) {
+          console.error("[profiles] request-resolved notification failed:", err);
+        }
+      }
+
       return { success: true };
     }),
 });

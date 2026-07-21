@@ -64,6 +64,13 @@
       "when": 1781300000000,
       "tag": "0008_share_verifications",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1781400000000,
+      "tag": "0009_view_digest",
+      "breakpoints": true
     }
   ]
 }

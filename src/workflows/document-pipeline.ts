@@ -67,6 +67,9 @@ export class DocumentPipeline extends WorkflowEntrypoint<PipelineEnv, DocumentJo
         .update(schema.documents)
         .set({ status: "failed", errorMessage: msg.slice(0, 500) })
         .where(eq(schema.documents.id, event.payload.documentId));
+      // Tell the owner it failed rather than leaving them in silence.
+      const { notifyProcessingFailed } = await import("@/server/workers/notify-failed");
+      await notifyProcessingFailed(this.env, event.payload.documentId);
       throw err;
     }
   }
