@@ -37,6 +37,10 @@ export const organizations = sqliteTable(
     churnEmailCount: integer("churn_email_count").notNull().default(0),
     // Set via the unsubscribe link in re-engagement emails (CAN-SPAM).
     churnOptOut: integer("churn_opt_out", { mode: "boolean" }).notNull().default(false),
+    // Deal-room view digest: timestamp of the last digest sent (so the daily
+    // job only reports views since then) + a separate opt-out.
+    viewDigestSentAt: integer("view_digest_sent_at", { mode: "timestamp" }),
+    viewDigestOptOut: integer("view_digest_opt_out", { mode: "boolean" }).notNull().default(false),
     ...timestamps,
   },
   (t) => [index("orgs_assoc_idx").on(t.associationId)]

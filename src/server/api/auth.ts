@@ -17,7 +17,14 @@ import { timingSafeEqual } from "@/lib/timing-safe-equal";
 import { signupSchema, loginSchema } from "@/types";
 import { nanoid } from "@/lib/nanoid";
 import { getEmailSender } from "@/lib/email/sender";
-import { passwordResetEmail, verifyEmail } from "@/lib/email/templates";
+import {
+  passwordResetEmail,
+  verifyEmail,
+  welcomeEmail,
+  passwordChangedEmail,
+  inviteAcceptedEmail,
+} from "@/lib/email/templates";
+import { associations } from "@/db/schema";
 import { generateRawToken, hashToken, expiryFor, type TokenKind } from "@/lib/email/tokens";
 
 import { appUrl } from "@/lib/app-url";
@@ -165,17 +172,55 @@ export const authRouter = router({
       ctx.resHeaders.append("Set-Cookie", cookie);
       await recordLogin(ctx, userId);
 
-      // Send an email-verification link (best-effort — don't block signup).
-      // Skipped entirely when verification is off, since the user is already
-      // verified above and the journey must never depend on an email link.
-      if (verificationOn) {
-        try {
+      // One warm welcome email (best-effort — never blocks signup). When
+      // verification is on it carries the confirm-email CTA, so a new user
+      // gets a single orienting email rather than two.
+      try {
+        let verifyUrl: string | undefined;
+        if (verificationOn) {
           const raw = await issueToken(ctx.db, userId, "email_verify");
-          const url = `${appUrl(ctx.env)}/verify-email?token=${raw}`;
-          const mail = verifyEmail({ name: input.name, url });
-          await getEmailSender(ctx.env).send({ to: input.email.toLowerCase(), ...mail });
+          verifyUrl = `${appUrl(ctx.env)}/verify-email?token=${raw}`;
+        }
+        const mail = welcomeEmail({
+          name: input.name,
+          url: `${appUrl(ctx.env)}/dashboard`,
+          verifyUrl,
+        });
+        await getEmailSender(ctx.env).send({ to: input.email.toLowerCase(), ...mail });
+      } catch (err) {
+        console.error("[auth] signup welcome email failed:", err);
+      }
+
+      // Notify the association admin(s) that a member joined via their invite.
+      if (inviteId && associationId) {
+        try {
+          const assoc = await ctx.db
+            .select({ name: associations.name })
+            .from(associations)
+            .where(eq(associations.id, associationId))
+            .get();
+          const admins = await ctx.db
+            .select({ name: users.name, email: users.email })
+            .from(users)
+            .where(and(eq(users.associationId, associationId), eq(users.role, "association_admin")))
+            .all();
+          const sender = getEmailSender(ctx.env);
+          const url = `${appUrl(ctx.env)}/admin`;
+          await Promise.all(
+            admins.map((admin) =>
+              sender.send({
+                to: admin.email,
+                ...inviteAcceptedEmail({
+                  adminName: admin.name,
+                  businessName: input.businessName,
+                  associationName: assoc?.name ?? "your association",
+                  url,
+                }),
+              })
+            )
+          );
         } catch (err) {
-          console.error("[auth] signup verification email failed:", err);
+          console.error("[auth] invite-accepted notification failed:", err);
         }
       }
 
@@ -318,6 +363,25 @@ export const authRouter = router({
       // 30-day JWT must not survive the owner resetting their password.
       if (ctx.env.SESSIONS) {
         await revokeAllUserSessions(ctx.env.SESSIONS, row.userId);
+      }
+
+      // Security confirmation: tell the account owner the password changed, so
+      // an unauthorized reset doesn't go unnoticed. Best-effort.
+      try {
+        const owner = await ctx.db
+          .select({ name: users.name, email: users.email })
+          .from(users)
+          .where(eq(users.id, row.userId))
+          .get();
+        if (owner) {
+          const mail = passwordChangedEmail({
+            name: owner.name,
+            resetUrl: `${appUrl(ctx.env)}/forgot-password`,
+          });
+          await getEmailSender(ctx.env).send({ to: owner.email, ...mail });
+        }
+      } catch (err) {
+        console.error("[auth] password-changed confirmation failed:", err);
       }
 
       return { ok: true };

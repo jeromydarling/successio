@@ -38,6 +38,159 @@ function button(href: string, label: string): string {
   return `<a href="${href}" style="display:inline-block;background:${AMBER};color:#1a1206;text-decoration:none;font-weight:600;font-size:15px;padding:12px 22px;border-radius:10px;">${label}</a>`;
 }
 
+export function welcomeEmail(opts: { name?: string; url: string; verifyUrl?: string }): Built {
+  const hi = opts.name ? `Welcome, ${opts.name}.` : "Welcome.";
+  const verifyBlock = opts.verifyUrl
+    ? `<p style="margin:20px 0 8px;">First, please confirm your email so account recovery works:</p>
+       <p style="margin:0 0 24px;">${button(opts.verifyUrl, "Confirm email")}</p>`
+    : `<p style="margin:20px 0 24px;">${button(opts.url, "Open your dashboard")}</p>`;
+  return {
+    subject: "Welcome to Successio — let's get your business documented",
+    html: layout({
+      heading: "Your business, made ready to hand off",
+      bodyHtml: `<p style="margin:0 0 16px;">${hi}</p>
+        <p style="margin:0 0 12px;">Successio turns the paperwork and know-how of your business into something a buyer, a lender, or your own crew can actually understand. Here's the fastest start:</p>
+        <ol style="margin:0 0 8px;padding-left:20px;">
+          <li style="margin-bottom:6px;"><strong>Upload a few documents</strong> — a customer list, last year's P&amp;L, an equipment list. Snap photos of paper right from your phone.</li>
+          <li style="margin-bottom:6px;"><strong>Record what's in your head</strong> — answer one question out loud and it becomes a written procedure.</li>
+          <li style="margin-bottom:6px;"><strong>Watch your Sale Readiness Score climb</strong> — and generate a buyer-ready profile when you're set.</li>
+        </ol>
+        ${verifyBlock}
+        <p style="margin:0;color:#94a3b8;font-size:13px;">Not sure where to start? The <a href="${opts.url.replace(/\/dashboard.*$/, "")}/help/getting-started" style="color:${AMBER};">first-30-minutes guide</a> walks you through it.</p>`,
+    }),
+    text: `${hi}\n\nSuccessio turns your business's paperwork and know-how into something a buyer or lender can understand.\n\nStart here:\n1. Upload a few documents (customer list, P&L, equipment list) — photos of paper work too\n2. Record what's in your head — it becomes a written procedure\n3. Watch your Sale Readiness Score climb, then generate a buyer profile\n\n${opts.verifyUrl ? `Confirm your email: ${opts.verifyUrl}\n\n` : ""}Open your dashboard: ${opts.url}`,
+  };
+}
+
+export function passwordChangedEmail(opts: { name?: string; resetUrl: string }): Built {
+  const hi = opts.name ? `Hi ${opts.name},` : "Hi,";
+  return {
+    subject: "Your Successio password was changed",
+    html: layout({
+      heading: "Your password was changed",
+      bodyHtml: `<p style="margin:0 0 16px;">${hi}</p>
+        <p style="margin:0 0 16px;">Your Successio password was just changed, and every other signed-in device has been signed out.</p>
+        <p style="margin:0 0 20px;color:${INK};"><strong>If this was you</strong>, no action is needed.</p>
+        <p style="margin:0 0 8px;"><strong>If this wasn't you</strong>, reset your password immediately and contact us:</p>
+        <p style="margin:0 0 24px;">${button(opts.resetUrl, "Reset your password")}</p>`,
+    }),
+    text: `${hi}\n\nYour Successio password was just changed, and every other device has been signed out.\n\nIf this was you, no action is needed.\n\nIf this wasn't you, reset your password immediately: ${opts.resetUrl}`,
+  };
+}
+
+export function processingFailedEmail(opts: {
+  name?: string;
+  orgName: string;
+  documentName: string;
+  url: string;
+}): Built {
+  const hi = opts.name ? `Hi ${opts.name},` : "Hi,";
+  const safeName = opts.documentName.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return {
+    subject: `A document couldn't be processed for ${opts.orgName}`,
+    html: layout({
+      heading: "One of your documents needs another try",
+      bodyHtml: `<p style="margin:0 0 16px;">${hi}</p>
+        <p style="margin:0 0 16px;">We couldn't finish processing <strong>${safeName}</strong>. This usually means the file was hard to read — a blurry scan, an unusual format, or a corrupted export.</p>
+        <p style="margin:0 0 8px;">Open your vault to retry it, or re-upload a clearer copy:</p>
+        <p style="margin:0 0 24px;">${button(opts.url, "Open your Document Vault")}</p>
+        <p style="margin:0;color:#94a3b8;font-size:13px;">Nothing else was affected — your other documents processed normally.</p>`,
+    }),
+    text: `${hi}\n\nWe couldn't finish processing "${opts.documentName}" for ${opts.orgName}. This usually means the file was hard to read.\n\nOpen your vault to retry or re-upload a clearer copy:\n${opts.url}`,
+  };
+}
+
+export function documentRequestResolvedEmail(opts: {
+  requesterName?: string;
+  orgName: string;
+  status: "fulfilled" | "declined";
+}): Built {
+  const hi = opts.requesterName ? `Hi ${opts.requesterName},` : "Hi,";
+  const fulfilled = opts.status === "fulfilled";
+  return {
+    subject: fulfilled
+      ? `${opts.orgName} responded to your document request`
+      : `Update on your request to ${opts.orgName}`,
+    html: layout({
+      heading: fulfilled ? "Your document request was accepted" : "Update on your request",
+      bodyHtml: `<p style="margin:0 0 16px;">${hi}</p>
+        ${
+          fulfilled
+            ? `<p style="margin:0 0 16px;">The owner of <strong>${opts.orgName}</strong> has accepted your document request and will send the materials to you directly by email. Keep an eye on your inbox.</p>`
+            : `<p style="margin:0 0 16px;">The owner of <strong>${opts.orgName}</strong> reviewed your document request and isn't able to share those materials right now. You're welcome to reach out to them directly to discuss.</p>`
+        }
+        <p style="margin:0;color:#94a3b8;font-size:13px;">This message was sent because you requested documents through a Successio deal room.</p>`,
+    }),
+    text: `${hi}\n\n${
+      fulfilled
+        ? `The owner of ${opts.orgName} has accepted your document request and will send the materials directly by email.`
+        : `The owner of ${opts.orgName} reviewed your request and isn't able to share those materials right now.`
+    }`,
+  };
+}
+
+export function dealRoomDigestEmail(opts: {
+  name?: string;
+  orgName: string;
+  views: Array<{ viewer: string; tier: string; sections: number | null; durationSeconds: number | null }>;
+  url: string;
+  unsubscribeUrl: string;
+}): Built {
+  const hi = opts.name ? `Hi ${opts.name},` : "Hi,";
+  const rows = opts.views
+    .map((v) => {
+      const engagement =
+        [
+          v.sections ? `${v.sections} section${v.sections > 1 ? "s" : ""}` : null,
+          v.durationSeconds
+            ? v.durationSeconds >= 60
+              ? `${Math.round(v.durationSeconds / 60)}m`
+              : `${v.durationSeconds}s`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" · ") || "opened";
+      return `<tr><td style="padding:8px 0;border-bottom:1px solid #f1f5f9;">
+        <strong style="color:${INK};">${v.viewer.replace(/</g, "&lt;")}</strong>
+        <span style="color:#94a3b8;"> · ${v.tier} · ${engagement}</span></td></tr>`;
+    })
+    .join("");
+  const n = opts.views.length;
+  return {
+    subject: `${n} ${n === 1 ? "person" : "people"} viewed ${opts.orgName}'s profile`,
+    html: layout({
+      heading: n === 1 ? "Someone viewed your business profile" : "People are viewing your business profile",
+      bodyHtml: `<p style="margin:0 0 16px;">${hi}</p>
+        <p style="margin:0 0 12px;">Here's who looked at your deal room in the last day:</p>
+        <table role="presentation" width="100%" style="margin:0 0 20px;">${rows}</table>
+        <p style="margin:0 0 24px;">${button(opts.url, "See the full access log")}</p>
+        <p style="margin:0;color:#94a3b8;font-size:12px;">You're getting this because someone viewed your shared profile. <a href="${opts.unsubscribeUrl}" style="color:#94a3b8;text-decoration:underline;">Turn off view notifications</a>.</p>`,
+    }),
+    text: `${hi}\n\nWho viewed ${opts.orgName}'s deal room in the last day:\n${opts.views
+      .map((v) => `- ${v.viewer} (${v.tier})`)
+      .join("\n")}\n\nSee the full access log: ${opts.url}\n\nTurn off view notifications: ${opts.unsubscribeUrl}`,
+  };
+}
+
+export function inviteAcceptedEmail(opts: {
+  adminName?: string;
+  businessName: string;
+  associationName: string;
+  url: string;
+}): Built {
+  const hi = opts.adminName ? `Hi ${opts.adminName},` : "Hi,";
+  return {
+    subject: `${opts.businessName} joined ${opts.associationName} on Successio`,
+    html: layout({
+      heading: "A member accepted your invitation",
+      bodyHtml: `<p style="margin:0 0 16px;">${hi}</p>
+        <p style="margin:0 0 20px;"><strong>${opts.businessName.replace(/</g, "&lt;")}</strong> just created a Successio account through your association's invite. They'll appear in your member roster as they build out their business record.</p>
+        <p style="margin:0 0 24px;">${button(opts.url, "Open your association portal")}</p>`,
+    }),
+    text: `${hi}\n\n${opts.businessName} just joined ${opts.associationName} on Successio through your invite. They'll appear in your member roster.\n\nOpen your portal: ${opts.url}`,
+  };
+}
+
 export function passwordResetEmail(opts: { name?: string; url: string }): Built {
   const hi = opts.name ? `Hi ${opts.name},` : "Hi,";
   return {
