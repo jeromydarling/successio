@@ -2,6 +2,14 @@ import { Check, X } from "lucide-react";
 import { SiteNav } from "@/components/marketing/site-nav";
 import { SiteFooter } from "@/components/marketing/site-footer";
 import { PricingCards, type PricingTier } from "@/components/marketing/pricing-cards";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata = pageMetadata({
+  title: "Pricing",
+  description:
+    "Simple plans for every stage of the handoff. Start free, upgrade when you're ready, or let us do it for you. 14-day trial, cancel anytime.",
+  path: "/pricing",
+});
 
 /** Consumed by the deal room + closing flow in a later phase (Stripe Connect). */
 const TRANSACTION_FEE = { rate: 0.0075, min: 500, max: 15000 };
@@ -144,7 +152,7 @@ function Cell({ value }: { value: boolean | string }) {
 export default function PricingPage() {
   const c = PRICING_CONTENT;
   return (
-    <main className="relative">
+    <main className="relative" id="main-content">
       <SiteNav />
 
       {/* Trust bar */}

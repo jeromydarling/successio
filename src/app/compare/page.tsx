@@ -62,7 +62,7 @@ const ROI = [
 
 export default function ComparePage() {
   return (
-    <main className="relative">
+    <main className="relative" id="main-content">
       <SiteNav />
 
       {/* Hero */}

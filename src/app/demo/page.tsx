@@ -55,7 +55,7 @@ export default function DemoPage() {
   };
 
   return (
-    <main className="relative min-h-screen pb-24">
+    <main className="relative min-h-screen pb-24" id="main-content">
       <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[420px] bg-grid bg-grid-fade" />
 
       <div className="sticky top-0 z-40 border-b border-edge bg-canvas/70 backdrop-blur-xl">
