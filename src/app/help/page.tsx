@@ -28,7 +28,7 @@ export default function HelpIndexPage() {
   return (
     <div className="min-h-screen bg-canvas">
       <SiteNav />
-      <main className="mx-auto max-w-4xl px-6 pb-24 pt-32">
+      <main className="mx-auto max-w-4xl px-6 pb-24 pt-32" id="main-content">
         <div className="text-center">
           <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-amber">Help Center</p>
           <h1 className="mt-3 text-3xl font-bold text-ink sm:text-4xl">

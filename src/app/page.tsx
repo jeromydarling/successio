@@ -10,7 +10,7 @@ import { SiteFooter } from "@/components/marketing/site-footer";
 
 export default function HomePage() {
   return (
-    <main className="relative">
+    <main className="relative" id="main-content">
       <SiteNav />
       <Hero />
       <Stats />

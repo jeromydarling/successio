@@ -63,7 +63,7 @@ const PATHS = [
 
 export default function WhyPage() {
   return (
-    <main className="relative">
+    <main className="relative" id="main-content">
       <SiteNav />
 
       {/* Hero */}

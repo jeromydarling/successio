@@ -3,6 +3,14 @@ import { Mail, ArrowLeft } from "lucide-react";
 import { SiteNav } from "@/components/marketing/site-nav";
 import { SiteFooter } from "@/components/marketing/site-footer";
 import { Button } from "@/components/ui/button";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata = pageMetadata({
+  title: "Contact",
+  description:
+    "Questions about Successio, a done-for-you setup, or an association partnership? Get in touch — we'd love to help you pass the torch.",
+  path: "/contact",
+});
 
 const COPY = {
   partner: {
@@ -27,7 +35,7 @@ export default async function ContactPage({
   const subject = plan === "partner" ? "Successio — Partner inquiry" : "Successio inquiry";
 
   return (
-    <main className="relative">
+    <main className="relative" id="main-content">
       <SiteNav />
 
       <section className="relative overflow-hidden pt-40 pb-28">

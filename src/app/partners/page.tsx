@@ -81,7 +81,7 @@ const PARTNERS = [
 
 export default function PartnersPage() {
   return (
-    <main className="relative">
+    <main className="relative" id="main-content">
       <SiteNav />
 
       {/* Hero */}

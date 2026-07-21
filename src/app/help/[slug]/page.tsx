@@ -4,6 +4,7 @@
  * markdown subset via src/lib/help/markdown.tsx.
  */
 
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, ChevronRight } from "lucide-react";
@@ -11,10 +12,26 @@ import { SiteNav } from "@/components/marketing/site-nav";
 import { SiteFooter } from "@/components/marketing/site-footer";
 import { HELP_ARTICLES, getArticle, articlesByCategory } from "@/lib/help/articles";
 import { renderMarkdown } from "@/lib/help/markdown";
+import { pageMetadata } from "@/lib/seo";
 import { cn } from "@/lib/utils";
 
 export function generateStaticParams() {
   return HELP_ARTICLES.map((a) => ({ slug: a.slug }));
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  const article = getArticle(slug);
+  if (!article) return pageMetadata({ title: "Help", description: "Successio help center.", path: "/help", index: false });
+  return pageMetadata({
+    title: article.title,
+    description: article.summary,
+    path: `/help/${article.slug}`,
+  });
 }
 
 export default async function HelpArticlePage({
@@ -33,7 +50,7 @@ export default async function HelpArticlePage({
   return (
     <div className="min-h-screen bg-canvas">
       <SiteNav />
-      <main className="mx-auto max-w-6xl px-6 pb-24 pt-32">
+      <main className="mx-auto max-w-6xl px-6 pb-24 pt-32" id="main-content">
         <div className="flex gap-10">
           {/* Sidebar */}
           <aside className="hidden w-60 shrink-0 lg:block">
