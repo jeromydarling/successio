@@ -21,7 +21,7 @@ const PERSONAS: {
     key: "owner",
     icon: Factory,
     title: "Explore as a business owner",
-    who: "Carl Brenner · Brenner Precision Machining",
+    who: "Carl Brenner · Brenner Precision Machining (fictional example)",
     blurb:
       "A 38-year machine shop in Akron getting ready to sell. See the owner's side: upload documents, watch the readiness score build, browse the deal room, and read the keepsake Legacy Book.",
     bullets: ["Readiness dashboard", "Document vault & history", "Deal room", "Legacy Book"],
@@ -30,7 +30,7 @@ const PERSONAS: {
     key: "association",
     icon: Building2,
     title: "Explore as an association",
-    who: "Heartland Tooling Alliance · 6 member businesses",
+    who: "Heartland Tooling Alliance · 6 member businesses (fictional example)",
     blurb:
       "A trade alliance helping its members retire well. See the portfolio view: every member's readiness, who's at risk, aggregate lift, and the books you can gift retiring owners.",
     bullets: ["Member portfolio", "Readiness distribution", "At-risk flags", "Gift a Legacy Book"],

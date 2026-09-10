@@ -11,14 +11,16 @@ import {
 } from "lucide-react";
 import { Reveal } from "./motion-primitives";
 
+// Each trade shows the document types the AI actually understands for it —
+// a real product capability, never an implied association endorsement.
 const VERTICALS = [
-  { icon: Factory, label: "Machine Shops", partners: "NTMA · PMPA" },
-  { icon: Wind, label: "HVAC", partners: "ACCA" },
-  { icon: Wrench, label: "Plumbing", partners: "PHCC" },
-  { icon: Zap, label: "Electrical", partners: "IEC · NECA" },
-  { icon: HardHat, label: "Construction", partners: "AGC" },
-  { icon: Truck, label: "Trucking", partners: "ATA" },
-  { icon: Tractor, label: "Agriculture", partners: "AFBF" },
+  { icon: Factory, label: "Machine Shops", docs: "job travelers · work orders · QC records" },
+  { icon: Wind, label: "HVAC", docs: "service tickets · maintenance contracts" },
+  { icon: Wrench, label: "Plumbing", docs: "work orders · permits · service agreements" },
+  { icon: Zap, label: "Electrical", docs: "job estimates · permits · inspection reports" },
+  { icon: HardHat, label: "Construction", docs: "bids · contracts · lien waivers" },
+  { icon: Truck, label: "Trucking", docs: "load sheets · DOT records · maintenance logs" },
+  { icon: Tractor, label: "Agriculture", docs: "leases · crop records · equipment lists" },
 ];
 
 function Row({ reverse }: { reverse?: boolean }) {
@@ -39,7 +41,7 @@ function Row({ reverse }: { reverse?: boolean }) {
             </span>
             <div>
               <div className="text-sm font-semibold text-ink">{v.label}</div>
-              <div className="font-mono text-[11px] text-ink-faint">{v.partners}</div>
+              <div className="font-mono text-[11px] text-ink-faint">{v.docs}</div>
             </div>
           </div>
         ))}
@@ -60,9 +62,9 @@ export function Verticals() {
             Not generic SaaS. It knows what a job traveler is.
           </h2>
           <p className="mt-4 max-w-xl text-ink-soft">
-            Each trade gets its own document types, extraction prompts, readiness
-            checklist and association network — distributed through the groups
-            your members already trust.
+            Each trade gets its own document types, extraction prompts, and
+            readiness checklist — so the AI reads your paperwork the way someone
+            in your business would.
           </p>
         </Reveal>
       </div>

@@ -34,7 +34,7 @@ const ROWS = [
   {
     dim: "What it costs",
     old: "6–12% broker commission — about $300,000 on a $5M sale.",
-    neu: "Free to try, a flat monthly plan, and a capped fee only when a deal closes.",
+    neu: "Free to try, then one flat price to get sale-ready — no commission on your sale.",
   },
   {
     dim: "Surviving due diligence",
@@ -115,6 +115,11 @@ export default function ComparePage() {
               </StaggerItem>
             ))}
           </StaggerGroup>
+          <p className="mt-6 text-xs leading-relaxed text-ink-faint">
+            &ldquo;The usual way&rdquo; figures are widely reported industry estimates from
+            brokerage and exit-planning surveys — not Successio data or results. Sources for
+            the figures below are listed with each.
+          </p>
         </div>
       </section>
 
