@@ -73,9 +73,20 @@ export async function purgeOrgs(env: PurgeEnv, orgIds: string[]): Promise<{ user
   }
 
   // D1: children before parents — cascades aren't relied on.
+  const tokenIds = (
+    await db
+      .select({ id: schema.shareTokens.id })
+      .from(schema.shareTokens)
+      .where(inArray(schema.shareTokens.orgId, orgIds))
+      .all()
+  ).map((t) => t.id);
+  if (tokenIds.length > 0) {
+    await db.delete(schema.shareVerifications).where(inArray(schema.shareVerifications.tokenId, tokenIds));
+  }
   await db.delete(schema.shareViews).where(inArray(schema.shareViews.orgId, orgIds));
   await db.delete(schema.documentRequests).where(inArray(schema.documentRequests.orgId, orgIds));
   await db.delete(schema.shareTokens).where(inArray(schema.shareTokens.orgId, orgIds));
+  await db.delete(schema.securityEvents).where(inArray(schema.securityEvents.orgId, orgIds));
   await db.delete(schema.businessProfiles).where(inArray(schema.businessProfiles.orgId, orgIds));
   await db.delete(schema.documentChunks).where(inArray(schema.documentChunks.orgId, orgIds));
   await db.delete(schema.extractedEntities).where(inArray(schema.extractedEntities.orgId, orgIds));

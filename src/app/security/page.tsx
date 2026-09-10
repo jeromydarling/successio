@@ -1,13 +1,32 @@
 import { LegalPage } from "@/components/marketing/legal-page";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata = { title: "Security — Successio" };
+export const metadata = pageMetadata({
+  title: "Security",
+  description:
+    "How Successio protects the financial record of your business: double encryption, two-factor auth, device control, a full activity log, and data you can export or delete at any time.",
+  path: "/security",
+});
 
 const BODY = `
-You're trusting Successio with the financial record of a life's work. Here is plainly what protects it — written for owners, and detailed enough for a lender's vendor review.
+You're trusting Successio with the financial record of a life's work. Here is plainly what protects it — written for owners, and detailed enough for a lender's vendor review. Every control on this page is real and in place today; nothing here is aspirational.
 
-## Infrastructure
+## Encrypted at rest — twice
 
-The Service runs entirely on **Cloudflare's global platform** — application code on Cloudflare Workers, the database on Cloudflare D1, and files on Cloudflare R2. All customer data is **encrypted in transit (TLS everywhere)** and **encrypted at rest** by the platform. There are no self-managed servers to patch and no third-party data centers in the path.
+The Service runs entirely on **Cloudflare's global platform** — application code on Cloudflare Workers, the database on Cloudflare D1, and files on Cloudflare R2. All customer data is **encrypted in transit (TLS everywhere)** and **encrypted at rest** by the platform.
+
+On top of that, the most sensitive content is **encrypted again at the application layer** (AES-256-GCM) with a key that lives in a Worker secret, not in the database: the full text of every document, every extracted-record blob, every search chunk, and your two-factor secret. A breach of the database alone yields ciphertext. Keys are versioned so they can be rotated without re-encrypting history.
+
+## Controls that are yours
+
+Open **Settings → Security & privacy** in your account and you'll find:
+
+- **Two-factor authentication** — a code from an authenticator app is required to sign in, so a stolen password alone can't get in. Single-use recovery codes cover a lost phone.
+- **Signed-in devices** — every device with access to your account, with one-click sign-out per device and "sign out all other devices."
+- **Security activity log** — every sign-in, failed attempt, password or two-factor change, share link, and export, with the device it came from. If something wasn't you, you'll see it.
+- **New-device alerts** — an email the moment your account is accessed from a device it hasn't used before.
+- **Download your data** — everything we hold about your business as one file, any time. No lock-in.
+- **Delete your account** — permanent removal of every row, file, and search vector, confirmed with your password. Not a soft delete.
 
 ## Data isolation
 
@@ -17,7 +36,7 @@ Every query in the product is scoped to your business. Documents, extracted reco
 
 Nothing leaves your account without an explicit share link created by you. Links are:
 
-- **Tiered** — a public teaser exposes no financials; confidential tiers require the viewer to identify themselves before the server releases anything sensitive
+- **Tiered** — a public teaser exposes no financials; confidential tiers require the viewer to identify themselves and verify their email before the server releases anything sensitive
 - **Expirable** — confidential links default to a 90-day expiry
 - **Cappable** — optional view limits, enforced server-side on the request that releases data
 - **Revocable** — instantly, from your deal room
@@ -26,12 +45,12 @@ Nothing leaves your account without an explicit share link created by you. Links
 ## Application security practices
 
 - Passwords stored as salted PBKDF2 hashes; constant-time comparisons on all secret checks
-- Session revocation on password reset (a stolen session dies when you reset)
-- Rate limiting on sign-in, sign-up, password reset, and every public sharing endpoint
+- Every session individually revocable; all sessions revoked on password reset (a stolen session dies when you reset)
+- Rate limiting on sign-in, sign-up, two-factor, password reset, and every public sharing endpoint
 - Strict security headers (HSTS, CSP, frame-deny, content-type sniffing disabled)
 - Server-side validation of every input; uploaded files are never executed or trusted
-- Viewer IP addresses stored only as one-way hashes
-- Continuous error monitoring, and a CI pipeline that blocks deployment on failing tests
+- Viewer and visitor IP addresses stored only as one-way hashes
+- Continuous error monitoring, and a CI pipeline that blocks deployment on failing tests — including an end-to-end suite that exercises the live product on every release
 
 ## AI data handling
 
@@ -49,5 +68,5 @@ Found something? Tell us at [the contact page](/contact) — include steps to re
 `;
 
 export default function SecurityPage() {
-  return <LegalPage eyebrow="Trust" title="Security at Successio" updated="July 16, 2026" body={BODY} />;
+  return <LegalPage eyebrow="Trust" title="Security at Successio" updated="September 10, 2026" body={BODY} />;
 }

@@ -13,6 +13,7 @@ import * as schema from "@/db/schema";
 import { makeGateway } from "@/lib/ai-gateway";
 import { chunkText } from "@/lib/ocr";
 import { nanoid } from "@/lib/nanoid";
+import { encryptField } from "@/lib/crypto";
 
 export interface EmbedParams {
   documentId: string;
@@ -24,6 +25,8 @@ export interface EmbedParams {
     VECTORS?: VectorizeIndex;
     CF_ACCOUNT_ID?: string;
     CF_AI_GATEWAY_ID: string;
+    ENCRYPTION_KEY?: string;
+    JWT_SECRET?: string;
   };
 }
 
@@ -61,6 +64,10 @@ export async function runEmbedding(params: EmbedParams): Promise<void> {
   const vectors: VectorizeVector[] = [];
   const chunkRows: typeof schema.documentChunks.$inferInsert[] = [];
 
+  // Chunk text is the document's content — stored app-layer encrypted. The
+  // vectors themselves carry only ids/metadata, never the text.
+  const encryptedChunks = await Promise.all(chunks.map((c) => encryptField(env, c)));
+
   for (let i = 0; i < chunks.length; i++) {
     const vectorId = `${orgId}:${documentId}:${i}`;
     vectors.push({
@@ -74,7 +81,7 @@ export async function runEmbedding(params: EmbedParams): Promise<void> {
       documentId,
       orgId,
       chunkIndex: i,
-      text: chunks[i],
+      text: encryptedChunks[i],
       vectorId,
     });
   }

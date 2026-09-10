@@ -10,9 +10,11 @@ import { configRouter } from "./config";
 import { legacyRouter } from "./legacy";
 import { translationRouter } from "./translation";
 import { superadminRouter } from "./superadmin";
+import { accountRouter } from "./account";
 
 export const appRouter = router({
   auth: authRouter,
+  account: accountRouter,
   documents: documentsRouter,
   businesses: businessesRouter,
   knowledge: knowledgeRouter,

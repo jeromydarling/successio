@@ -7,6 +7,7 @@ import { z } from "zod";
 import { AppTopNav } from "@/components/app/app-topnav";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc-client";
+import { SecurityCard } from "@/components/settings/security-card";
 
 const settingsSchema = z.object({
   name: z.string().min(1),
@@ -97,6 +98,8 @@ export default function SettingsPage() {
               <p className="mt-3 text-sm text-red-400">{sendVerify.error.message}</p>
             )}
           </div>
+
+          <SecurityCard orgName={org?.name ?? ""} />
 
           {/* Private email-ingest address */}
           {org && (

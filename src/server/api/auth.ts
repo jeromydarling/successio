@@ -23,8 +23,13 @@ import {
   welcomeEmail,
   passwordChangedEmail,
   inviteAcceptedEmail,
+  securityAlertEmail,
 } from "@/lib/email/templates";
 import { associations } from "@/db/schema";
+import { SignJWT, jwtVerify, decodeJwt } from "jose";
+import { logSecurityEvent, requestFingerprint, describeDevice } from "@/lib/security-events";
+import { decryptField } from "@/lib/crypto";
+import { verifyTotp, consumeRecoveryCode } from "@/lib/totp";
 import { generateRawToken, hashToken, expiryFor, type TokenKind } from "@/lib/email/tokens";
 
 import { appUrl } from "@/lib/app-url";
@@ -58,18 +63,63 @@ async function guardRate(
   }
 }
 
-/** Record a login event. Powers "last login" in the CRM and the churn cron's
- *  inactivity signal. Best-effort — a failed insert never blocks sign-in. */
-async function recordLogin(ctx: Context, userId: string): Promise<void> {
+/** Record a session row for the token just issued — keyed by its JWT id so
+ *  the owner can see and revoke this exact device in Settings — and alert on
+ *  a sign-in from a device this account hasn't used before. Also powers "last
+ *  login" in the CRM and the churn cron. Best-effort: never blocks sign-in. */
+async function recordLogin(
+  ctx: Context,
+  userId: string,
+  token: string,
+  opts: { firstSession?: boolean; email?: string; name?: string; orgId?: string } = {}
+): Promise<void> {
   try {
+    const { jti } = decodeJwt(token);
+    const fp = await requestFingerprint(ctx.req);
+    const knownDevice = fp.userAgent
+      ? await ctx.db
+          .select({ id: sessions.id })
+          .from(sessions)
+          .where(and(eq(sessions.userId, userId), eq(sessions.userAgent, fp.userAgent)))
+          .get()
+      : null;
+
     await ctx.db.insert(sessions).values({
       id: nanoid(),
       userId,
+      jti: jti ?? null,
+      userAgent: fp.userAgent,
+      ipHash: fp.ipHash,
+      lastSeenAt: new Date(),
       expiresAt: new Date(Date.now() + 30 * 86400 * 1000),
     });
+
+    if (!opts.firstSession && !knownDevice && opts.email) {
+      await logSecurityEvent(ctx.db, { type: "new_device_login", userId, orgId: opts.orgId, req: ctx.req });
+      const mail = securityAlertEmail({
+        name: opts.name,
+        headline: "New sign-in to your account",
+        detail: `Someone just signed in to your Successio account from ${describeDevice(fp.userAgent)}. If this was you, you can ignore this. If not, reset your password and sign out of all devices from Settings right away.`,
+        url: `${appUrl(ctx.env)}/settings`,
+      });
+      await getEmailSender(ctx.env).send({ to: opts.email, ...mail });
+    }
   } catch (err) {
     console.error("[auth] failed to record login:", err);
   }
+}
+
+/** Mint the session cookie for a fully-authenticated user and record it. */
+async function issueSession(ctx: Context, user: typeof users.$inferSelect): Promise<string> {
+  const token = await signSession(
+    { sub: user.id, orgId: user.orgId, email: user.email, role: user.role },
+    ctx.env.JWT_SECRET
+  );
+  const cookie = makeSessionCookie(token, ctx.env.ENVIRONMENT === "production");
+  ctx.resHeaders.append("Set-Cookie", cookie);
+  await recordLogin(ctx, user.id, token, { email: user.email, name: user.name, orgId: user.orgId });
+  await logSecurityEvent(ctx.db, { type: "login", userId: user.id, orgId: user.orgId, req: ctx.req });
+  return cookie;
 }
 
 /** Issue a single-use token for a user+kind, returning the raw token. */
@@ -170,7 +220,7 @@ export const authRouter = router({
       const isSecure = ctx.env.ENVIRONMENT === "production";
       const cookie = makeSessionCookie(token, isSecure);
       ctx.resHeaders.append("Set-Cookie", cookie);
-      await recordLogin(ctx, userId);
+      await recordLogin(ctx, userId, token, { firstSession: true });
 
       // One warm welcome email (best-effort — never blocks signup). When
       // verification is on it carries the confirm-email CTA, so a new user
@@ -245,18 +295,72 @@ export const authRouter = router({
 
       const valid = await verifyPassword(input.password, user.passwordHash);
       if (!valid) {
+        await logSecurityEvent(ctx.db, { type: "login_failed", userId: user.id, orgId: user.orgId, req: ctx.req });
         throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid credentials" });
       }
 
-      const token = await signSession(
-        { sub: user.id, orgId: user.orgId, email: user.email, role: user.role },
-        ctx.env.JWT_SECRET
-      );
-      const isSecure = ctx.env.ENVIRONMENT === "production";
-      const cookie = makeSessionCookie(token, isSecure);
-      ctx.resHeaders.append("Set-Cookie", cookie);
-      await recordLogin(ctx, user.id);
+      // Two-factor: don't issue the session yet. Hand back a 5-minute
+      // challenge the client completes with a code from the authenticator.
+      if (user.totpEnabledAt) {
+        const challenge = await new SignJWT({ purpose: "mfa" })
+          .setProtectedHeader({ alg: "HS256" })
+          .setSubject(user.id)
+          .setIssuedAt()
+          .setExpirationTime("5m")
+          .sign(new TextEncoder().encode(ctx.env.JWT_SECRET));
+        return { mfaRequired: true as const, challenge };
+      }
 
+      const cookie = await issueSession(ctx, user);
+      return { mfaRequired: false as const, userId: user.id, orgId: user.orgId, cookie };
+    }),
+
+  /** Second step of sign-in for accounts with two-factor on: a TOTP code or
+   *  a single-use recovery code completes the challenge from `login`. */
+  verifyMfa: publicProcedure
+    .input(z.object({ challenge: z.string().min(10), code: z.string().min(6).max(12) }))
+    .mutation(async ({ input, ctx }) => {
+      await guardRate(ctx, "mfa", "", 10, 300);
+
+      let sub: string | undefined;
+      try {
+        const { payload } = await jwtVerify(
+          input.challenge,
+          new TextEncoder().encode(ctx.env.JWT_SECRET)
+        );
+        if (payload.purpose !== "mfa") throw new Error("wrong purpose");
+        sub = payload.sub;
+      } catch {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "This sign-in attempt expired. Please sign in again." });
+      }
+      const user = await ctx.db.select().from(users).where(eq(users.id, sub!)).get();
+      if (!user || !user.totpEnabledAt || !user.totpSecret) {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid credentials" });
+      }
+
+      const secret = await decryptField(ctx.env, user.totpSecret);
+      let ok = await verifyTotp(secret, input.code);
+      let usedRecovery = false;
+      if (!ok && user.recoveryCodes) {
+        const remaining = await consumeRecoveryCode(input.code, JSON.parse(user.recoveryCodes));
+        if (remaining) {
+          ok = true;
+          usedRecovery = true;
+          await ctx.db
+            .update(users)
+            .set({ recoveryCodes: JSON.stringify(remaining) })
+            .where(eq(users.id, user.id));
+        }
+      }
+      if (!ok) {
+        await logSecurityEvent(ctx.db, { type: "mfa_challenge_failed", userId: user.id, orgId: user.orgId, req: ctx.req });
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "That code didn't match. Try again." });
+      }
+      if (usedRecovery) {
+        await logSecurityEvent(ctx.db, { type: "recovery_code_used", userId: user.id, orgId: user.orgId, req: ctx.req });
+      }
+
+      const cookie = await issueSession(ctx, user);
       return { userId: user.id, orgId: user.orgId, cookie };
     }),
 
@@ -301,6 +405,15 @@ export const authRouter = router({
     if (ctx.session?.jti && ctx.env.SESSIONS) {
       await revokeSession(ctx.env.SESSIONS, ctx.session.jti);
     }
+    if (ctx.session?.jti) {
+      await ctx.db
+        .update(sessions)
+        .set({ revokedAt: new Date() })
+        .where(eq(sessions.jti, ctx.session.jti));
+    }
+    if (ctx.session) {
+      await logSecurityEvent(ctx.db, { type: "logout", userId: ctx.session.sub, orgId: ctx.session.orgId, req: ctx.req });
+    }
     const cookie = clearSessionCookie();
     ctx.resHeaders.append("Set-Cookie", cookie);
     return { cookie };
@@ -320,6 +433,7 @@ export const authRouter = router({
         .get();
 
       if (user) {
+        await logSecurityEvent(ctx.db, { type: "password_reset_requested", userId: user.id, req: ctx.req });
         const raw = await issueToken(ctx.db, user.id, "password_reset");
         const url = `${appUrl(ctx.env)}/reset-password?token=${raw}`;
         const mail = passwordResetEmail({ name: user.name, url });
@@ -349,7 +463,7 @@ export const authRouter = router({
 
       await ctx.db
         .update(users)
-        .set({ passwordHash: await hashPassword(input.password) })
+        .set({ passwordHash: await hashPassword(input.password), passwordChangedAt: new Date() })
         .where(eq(users.id, row.userId));
       await ctx.db.update(authTokens).set({ usedAt: new Date() }).where(eq(authTokens.id, row.id));
 
@@ -364,6 +478,11 @@ export const authRouter = router({
       if (ctx.env.SESSIONS) {
         await revokeAllUserSessions(ctx.env.SESSIONS, row.userId);
       }
+      await ctx.db
+        .update(sessions)
+        .set({ revokedAt: new Date() })
+        .where(eq(sessions.userId, row.userId));
+      await logSecurityEvent(ctx.db, { type: "password_changed", userId: row.userId, req: ctx.req });
 
       // Security confirmation: tell the account owner the password changed, so
       // an unauthorized reset doesn't go unnoticed. Best-effort.
@@ -438,6 +557,8 @@ export const authRouter = router({
         role: users.role,
         orgId: users.orgId,
         emailVerifiedAt: users.emailVerifiedAt,
+        totpEnabledAt: users.totpEnabledAt,
+        passwordChangedAt: users.passwordChangedAt,
       })
       .from(users)
       .where(eq(users.id, ctx.session.sub))
@@ -446,6 +567,6 @@ export const authRouter = router({
     if (!user) {
       throw new TRPCError({ code: "NOT_FOUND", message: "User not found" });
     }
-    return { ...user, emailVerified: !!user.emailVerifiedAt };
+    return { ...user, emailVerified: !!user.emailVerifiedAt, totpEnabled: !!user.totpEnabledAt };
   }),
 });

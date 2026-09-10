@@ -296,7 +296,7 @@ export const documentsRouter = router({
         .get();
       if (!doc) throw new TRPCError({ code: "NOT_FOUND" });
 
-      const entities = await ctx.db
+      const rawEntities = await ctx.db
         .select({
           id: extractedEntities.id,
           entityType: extractedEntities.entityType,
@@ -308,7 +308,16 @@ export const documentsRouter = router({
         .where(eq(extractedEntities.documentId, input.id))
         .all();
 
-      return { doc, entities };
+      // OCR text and entity blobs are stored app-layer encrypted; decrypt on
+      // the way out (legacy plaintext rows pass through unchanged).
+      const { decryptField, decryptNullable } = await import("@/lib/crypto");
+      const entities = await Promise.all(
+        rawEntities.map(async (e) => ({ ...e, data: await decryptField(ctx.env, e.data) }))
+      );
+      return {
+        doc: { ...doc, ocrText: await decryptNullable(ctx.env, doc.ocrText) },
+        entities,
+      };
     }),
 
   /** Owner confirms the low-confidence extractions for a document are correct
