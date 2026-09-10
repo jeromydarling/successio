@@ -8,6 +8,7 @@ import { AppTopNav } from "@/components/app/app-topnav";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc-client";
 import { SecurityCard } from "@/components/settings/security-card";
+import { ConciergeStatusCard } from "@/components/settings/concierge-status-card";
 
 const settingsSchema = z.object({
   name: z.string().min(1),
@@ -99,6 +100,8 @@ export default function SettingsPage() {
             )}
           </div>
 
+          <ConciergeStatusCard />
+
           <SecurityCard orgName={org?.name ?? ""} />
 
           {/* Private email-ingest address */}
@@ -141,27 +144,27 @@ export default function SettingsPage() {
           <div className="rounded-2xl border border-edge bg-canvas-soft/50 p-7">
             <h2 className="text-lg font-semibold text-ink">Billing</h2>
             <p className="mt-1.5 text-sm leading-relaxed text-ink-soft">
-              Successio is free while you get set up. When you&apos;re ready, the Owner plan is
-              $49/month (or $39/month billed annually) with a 14-day free trial — cancel anytime.
+              Successio is free while you get set up. When you&apos;re ready, the Owner plan is one
+              fee — <span className="text-ink">$499 once</span>, or 12 monthly payments of $49 — and
+              then it&apos;s yours. No subscription.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               <a
-                href="https://buy.stripe.com/28EfZidRdes9c1JbMges001"
+                href="/pricing"
                 className="rounded-xl bg-amber px-4 py-2 text-sm font-semibold text-slate-900 transition-colors hover:bg-amber-bright"
               >
-                Subscribe monthly — $49/mo
+                See pricing
               </a>
               <a
-                href="https://buy.stripe.com/aFaeVedRd3Nv9TBeYses002"
+                href="/concierge"
                 className="rounded-xl border border-edge px-4 py-2 text-sm font-medium text-ink-soft transition-colors hover:border-edge-strong hover:text-ink"
               >
-                Annual — $39/mo, save 20%
+                Have us do it for you
               </a>
             </div>
             <p className="mt-3 text-xs text-ink-faint">
-              Checkout is handled securely by Stripe. Use the email on this account so we can match
-              your subscription. Full pricing on the{" "}
-              <a href="/pricing" className="text-amber underline underline-offset-2">pricing page</a>.
+              We&apos;ll send a secure Stripe checkout link to this account&apos;s email when your
+              trial ends — or <a href="/contact" className="text-amber underline underline-offset-2">ask us</a> any time.
             </p>
           </div>
 
