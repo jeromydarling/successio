@@ -16,6 +16,7 @@ import { extractJson } from "@/lib/json";
 import { getExtractPrompt } from "@/prompts/extract-registry";
 import { CONFIDENCE_THRESHOLD } from "@/prompts/shared/extract";
 import { nanoid } from "@/lib/nanoid";
+import { encryptField, type CryptoEnv } from "@/lib/crypto";
 
 // ── Zod schema for Claude's JSON output ──────────────────────────────────────
 
@@ -142,6 +143,8 @@ export interface ExtractionParams {
     ANTHROPIC_API_KEY?: string;
     GOOGLE_AI_API_KEY?: string;
     CF_AIG_TOKEN?: string;
+    ENCRYPTION_KEY?: string;
+    JWT_SECRET?: string;
   };
 }
 
@@ -208,7 +211,7 @@ export async function runExtraction(params: ExtractionParams): Promise<void> {
     writeEmployees(db, parsed.employees ?? [], orgId, documentId),
     writeProcesses(db, parsed.processes ?? [], orgId, documentId),
     writeMilestones(db, parsed.milestones ?? [], orgId, documentId),
-    writeEntityBlobs(db, parsed, orgId, documentId),
+    writeEntityBlobs(db, parsed, orgId, documentId, env),
   ]);
 
   await db.update(schema.documents)
@@ -323,8 +326,16 @@ async function writeMilestones(db: ReturnType<typeof drizzle>, items: z.infer<ty
   if (rows.length > 0) await db.insert(schema.orgMilestones).values(rows).onConflictDoNothing();
 }
 
-async function writeEntityBlobs(db: ReturnType<typeof drizzle>, parsed: ExtractionOutput, orgId: string, docId: string) {
-  // Persist each entity type as a blob in extracted_entities for audit trail
+async function writeEntityBlobs(
+  db: ReturnType<typeof drizzle>,
+  parsed: ExtractionOutput,
+  orgId: string,
+  docId: string,
+  env: CryptoEnv
+) {
+  // Persist each entity type as a blob in extracted_entities for audit trail.
+  // The blob holds the full extracted detail (financial figures, customer
+  // names) so it is stored app-layer encrypted.
   const types: [string, { confidence: number }[] | undefined][] = [
     ["customer", parsed.customers],
     ["equipment", parsed.equipment],
@@ -333,22 +344,24 @@ async function writeEntityBlobs(db: ReturnType<typeof drizzle>, parsed: Extracti
     ["process", parsed.processes],
     ["milestone", parsed.milestones],
   ];
-  const rows = types
-    .filter((entry): entry is [string, { confidence: number }[]] => !!entry[1] && entry[1].length > 0)
-    .map(([type, items]) => {
-      const avgConfidence = items.reduce((s, i) => s + (i.confidence ?? 0.5), 0) / items.length;
-      // Needs review if the average is weak OR any single item fell below the
-      // threshold (those items were withheld from the normalized tables).
-      const anyLow = items.some((i) => (i.confidence ?? 0.5) < CONFIDENCE_THRESHOLD);
-      return {
-        id: nanoid(),
-        documentId: docId,
-        orgId,
-        entityType: type,
-        data: JSON.stringify(items),
-        confidence: avgConfidence,
-        needsReview: avgConfidence < CONFIDENCE_THRESHOLD || anyLow,
-      };
-    });
+  const rows = await Promise.all(
+    types
+      .filter((entry): entry is [string, { confidence: number }[]] => !!entry[1] && entry[1].length > 0)
+      .map(async ([type, items]) => {
+        const avgConfidence = items.reduce((s, i) => s + (i.confidence ?? 0.5), 0) / items.length;
+        // Needs review if the average is weak OR any single item fell below the
+        // threshold (those items were withheld from the normalized tables).
+        const anyLow = items.some((i) => (i.confidence ?? 0.5) < CONFIDENCE_THRESHOLD);
+        return {
+          id: nanoid(),
+          documentId: docId,
+          orgId,
+          entityType: type,
+          data: await encryptField(env, JSON.stringify(items)),
+          confidence: avgConfidence,
+          needsReview: avgConfidence < CONFIDENCE_THRESHOLD || anyLow,
+        };
+      })
+  );
   if (rows.length > 0) await db.insert(schema.extractedEntities).values(rows);
 }

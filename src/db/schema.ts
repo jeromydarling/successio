@@ -94,6 +94,12 @@ export const users = sqliteTable(
     associationId: text("association_id"),
     // Email verification: null until the user confirms their address.
     emailVerifiedAt: integer("email_verified_at", { mode: "timestamp" }),
+    // Two-factor auth (TOTP). The secret is stored app-layer encrypted;
+    // recovery_codes holds a JSON array of SHA-256 hashes, never the codes.
+    totpSecret: text("totp_secret"),
+    totpEnabledAt: integer("totp_enabled_at", { mode: "timestamp" }),
+    recoveryCodes: text("recovery_codes"),
+    passwordChangedAt: integer("password_changed_at", { mode: "timestamp" }),
     ...timestamps,
   },
   (t) => [index("users_org_idx").on(t.orgId)]
@@ -131,9 +137,42 @@ export const sessions = sqliteTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+    // JWT id of the token this row represents — lets the owner see and revoke
+    // individual devices. Null on rows from before per-session tracking.
+    jti: text("jti"),
+    userAgent: text("user_agent"),
+    ipHash: text("ip_hash"),
+    lastSeenAt: integer("last_seen_at", { mode: "timestamp" }),
+    revokedAt: integer("revoked_at", { mode: "timestamp" }),
     ...timestamps,
   },
-  (t) => [index("sessions_user_idx").on(t.userId)]
+  (t) => [
+    index("sessions_user_idx").on(t.userId),
+    uniqueIndex("sessions_jti_idx").on(t.jti),
+  ]
+);
+
+/**
+ * Security audit log — one row per auth-relevant action (sign-ins, failed
+ * attempts, password/MFA changes, share links, exports). Shown to the owner
+ * in Settings so unexpected activity is visible, not hidden.
+ */
+export const securityEvents = sqliteTable(
+  "security_events",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id"),
+    orgId: text("org_id"),
+    type: text("type").notNull(),
+    ipHash: text("ip_hash"),
+    userAgent: text("user_agent"),
+    meta: text("meta"), // JSON
+    ...timestamps,
+  },
+  (t) => [
+    index("security_events_user_idx").on(t.userId, t.createdAt),
+    index("security_events_org_idx").on(t.orgId, t.createdAt),
+  ]
 );
 
 // ─── Document Pipeline ────────────────────────────────────────────────────────

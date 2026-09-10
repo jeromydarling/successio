@@ -191,6 +191,28 @@ export function inviteAcceptedEmail(opts: {
   };
 }
 
+/** Generic security alert (new device, 2FA on/off, account deleted). */
+export function securityAlertEmail(opts: {
+  name?: string;
+  headline: string;
+  detail: string;
+  url: string;
+}): Built {
+  const hi = opts.name ? `Hi ${opts.name},` : "Hi,";
+  const safeDetail = opts.detail.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return {
+    subject: `Security alert: ${opts.headline}`,
+    html: layout({
+      heading: opts.headline,
+      bodyHtml: `<p style="margin:0 0 16px;">${hi}</p>
+        <p style="margin:0 0 20px;">${safeDetail}</p>
+        <p style="margin:0 0 24px;">${button(opts.url, "Review security settings")}</p>
+        <p style="margin:0;color:#94a3b8;font-size:13px;">You can see every sign-in, device, and change to your account under Settings → Security.</p>`,
+    }),
+    text: `${hi}\n\n${opts.detail}\n\nReview your security settings: ${opts.url}`,
+  };
+}
+
 export function passwordResetEmail(opts: { name?: string; url: string }): Built {
   const hi = opts.name ? `Hi ${opts.name},` : "Hi,";
   return {

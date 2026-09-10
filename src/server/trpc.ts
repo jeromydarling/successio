@@ -50,6 +50,9 @@ export interface Context {
     GOOGLE_AI_API_KEY?: string;
     MISTRAL_API_KEY?: string;
     CF_AIG_TOKEN?: string;
+    // App-layer field encryption key (see src/lib/crypto.ts). Falls back to a
+    // key derived from JWT_SECRET when unset.
+    ENCRYPTION_KEY?: string;
     // Token protecting the /superadmin CRM area.
     SUPER_ADMIN_TOKEN?: string;
   };
@@ -127,6 +130,22 @@ export async function createContext(
     const cutoff = await getUserSessionCutoff(env.SESSIONS, session.sub);
     if (cutoff !== null && session.iat < cutoff) {
       session = null;
+    }
+  }
+
+  // Touch the session row's last-seen stamp at most once per 15 minutes so
+  // the owner's device list stays current without a write on every request.
+  if (session?.jti && env.SESSIONS) {
+    try {
+      const seenKey = `seen:${session.jti}`;
+      if ((await env.SESSIONS.get(seenKey)) === null) {
+        await env.SESSIONS.put(seenKey, "1", { expirationTtl: 900 });
+        const s = await import("@/db/schema");
+        const { eq } = await import("drizzle-orm");
+        await db.update(s.sessions).set({ lastSeenAt: new Date() }).where(eq(s.sessions.jti, session.jti));
+      }
+    } catch (err) {
+      console.warn("[trpc] last-seen touch failed:", err);
     }
   }
 

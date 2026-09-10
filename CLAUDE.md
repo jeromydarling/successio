@@ -627,7 +627,7 @@ Always fetch live docs before implementing integrations (do not rely on training
 | `JWT_SECRET` | Signs/validates user session JWTs | GitHub repo secret → synced by deploy.yml | self-generated (`openssl rand -hex 32`) | ✅ synced on every deploy |
 | `SUPER_ADMIN_TOKEN` | Password for the `/superadmin` CRM | GitHub repo secret → synced by deploy.yml | self-generated (`openssl rand -hex 32`) | ✅ set + synced |
 | `E2E_ADMIN_TOKEN` | Gates the E2E seed/purge endpoints (fail-closed) | GitHub repo secret → synced by deploy.yml | self-generated (`openssl rand -hex 32`) | ✅ set + synced |
-| `ENCRYPTION_KEY` | Encrypts PII fields at rest in D1 (future) | `.dev.vars` → `wrangler secret` | self-generated (`openssl rand -hex 32`) | ⬜ not set |
+| `ENCRYPTION_KEY` | App-layer AES-256-GCM field encryption (document text, entity blobs, search chunks, 2FA secrets) — see `src/lib/crypto.ts` | GitHub repo secret → synced by deploy.yml | self-generated (`openssl rand -hex 32`) | ⚠️ optional — a key is HKDF-derived from `JWT_SECRET` until set. Set it to decouple the two **before** ever rotating `JWT_SECRET`; ciphertext is key-id tagged so old rows stay readable |
 | `SENTRY_DSN` | Worker error reporting (`withSentry`) | Cloudflare dashboard secret | sentry.io | ✅ set via dashboard |
 
 > `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` were removed from the registry:

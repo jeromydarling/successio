@@ -28,6 +28,7 @@ import { getEmailSender } from "@/lib/email/sender";
 import { processingCompleteEmail } from "@/lib/email/templates";
 import { appUrl } from "@/lib/app-url";
 import type { DocumentJob } from "@/types";
+import { encryptField } from "@/lib/crypto";
 
 /** Document statuses that mean "still being worked on" (vs. a terminal state). */
 const IN_FLIGHT_STATUSES = ["queued", "ocr", "extracting", "embedding"] as const;
@@ -45,6 +46,9 @@ interface PipelineEnv {
   GOOGLE_AI_API_KEY?: string;
   MISTRAL_API_KEY?: string;
   CF_AIG_TOKEN?: string;
+  // Field encryption key ring (see src/lib/crypto.ts).
+  ENCRYPTION_KEY?: string;
+  JWT_SECRET?: string;
   // Email Sending — same bindings/vars declared in wrangler.toml.
   EMAIL?: { send: (m: unknown) => Promise<{ messageId?: string }> };
   CF_API_TOKEN?: string;
@@ -101,7 +105,7 @@ export class DocumentPipeline extends WorkflowEntrypoint<PipelineEnv, DocumentJo
         const bytes = await obj.arrayBuffer();
         const text = await gw.transcribeAudio(bytes);
         await db.update(schema.documents)
-          .set({ ocrText: text, ocrConfidence: 0.95, status: "extracting" })
+          .set({ ocrText: await encryptField(env, text), ocrConfidence: 0.95, status: "extracting" })
           .where(eq(schema.documents.id, documentId));
         return text;
       }
@@ -111,7 +115,7 @@ export class DocumentPipeline extends WorkflowEntrypoint<PipelineEnv, DocumentJo
       const result = await runOcr({ fileType, fileName, r2Object: obj, gateway: makeGateway(env), browser: env.BROWSER });
 
       await db.update(schema.documents)
-        .set({ ocrText: result.text, ocrConfidence: result.confidence, status: "extracting" })
+        .set({ ocrText: await encryptField(env, result.text), ocrConfidence: result.confidence, status: "extracting" })
         .where(eq(schema.documents.id, documentId));
 
       return result.text;

@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Eye, EyeOff, ArrowRight } from "lucide-react";
+import { Eye, EyeOff, ArrowRight, Smartphone } from "lucide-react";
 import { motion } from "framer-motion";
 import { trpc } from "@/lib/trpc-client";
 import { loginSchema, type LoginInput } from "@/types";
@@ -12,6 +12,10 @@ import { Button } from "@/components/ui/button";
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
+  // Set when the account has two-factor on: the password was right, now we
+  // need a code from the authenticator (or a recovery code).
+  const [challenge, setChallenge] = useState<string | null>(null);
+  const [code, setCode] = useState("");
 
   const {
     register,
@@ -21,7 +25,11 @@ export default function LoginPage() {
   } = useForm<LoginInput>({ resolver: zodResolver(loginSchema) });
 
   const loginMutation = trpc.auth.login.useMutation({
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data.mfaRequired) {
+        setChallenge(data.challenge);
+        return;
+      }
       // Cookie is set by the server; full navigation ensures the authed load.
       window.location.href = "/dashboard";
     },
@@ -30,7 +38,68 @@ export default function LoginPage() {
     },
   });
 
+  const mfaMutation = trpc.auth.verifyMfa.useMutation({
+    onSuccess: () => {
+      window.location.href = "/dashboard";
+    },
+  });
+
   const onSubmit = (data: LoginInput) => loginMutation.mutate(data);
+
+  if (challenge) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+        className="rounded-2xl border border-edge bg-canvas-soft/70 p-8 backdrop-blur-xl"
+      >
+        <div className="flex size-11 items-center justify-center rounded-xl bg-amber/10">
+          <Smartphone className="size-5 text-amber" />
+        </div>
+        <h1 className="mt-4 text-2xl font-semibold text-ink">Check your authenticator</h1>
+        <p className="mt-1 text-sm text-ink-soft">
+          Enter the six-digit code from your authenticator app. Lost your phone? A recovery code
+          works too.
+        </p>
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            mfaMutation.mutate({ challenge, code });
+          }}
+          className="mt-8 space-y-5"
+        >
+          <Field label="Code" error={mfaMutation.error?.message}>
+            <input
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              autoFocus
+              placeholder="123456"
+              className="input-base font-mono text-lg tracking-[0.3em]"
+            />
+          </Field>
+          <Button type="submit" className="w-full" disabled={mfaMutation.isPending || code.length < 6}>
+            {mfaMutation.isPending ? "Verifying…" : "Continue"}
+            <ArrowRight className="size-4" />
+          </Button>
+        </form>
+
+        <button
+          type="button"
+          onClick={() => {
+            setChallenge(null);
+            setCode("");
+          }}
+          className="mt-6 block w-full text-center text-sm text-ink-soft hover:text-ink"
+        >
+          Start over
+        </button>
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div
@@ -64,6 +133,7 @@ export default function LoginPage() {
             <button
               type="button"
               onClick={() => setShowPassword((s) => !s)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-faint hover:text-ink-soft"
             >
               {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
