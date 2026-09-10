@@ -11,11 +11,7 @@ export const metadata = pageMetadata({
   path: "/pricing",
 });
 
-/** Consumed by the deal room + closing flow in a later phase (Stripe Connect). */
-const TRANSACTION_FEE = { rate: 0.0075, min: 500, max: 15000 };
-
 const PRICING_CONTENT = {
-  trustBar: "Trusted by members of NTMA · AGC · PHCC · Urban Manufacturing Alliance",
   hero: {
     h1: "Simple pricing for every stage of the handoff",
     sub: "Whether you're passing the torch or picking it up.",
@@ -40,7 +36,7 @@ const PRICING_CONTENT = {
         "All extracted knowledge and SOPs",
         "Ongoing document uploads",
         "Readiness Score tracking for future transitions",
-        "Communis co-op pathway",
+        "Worker-ownership resources (co-ops, ESOPs)",
         "Standard support",
       ],
     },
@@ -68,7 +64,7 @@ const PRICING_CONTENT = {
         "Business Profile PDF (CIM-lite)",
         "3 share tiers: Teaser, NDA-gated, Lender Package",
         "1-year document vault",
-        "Communis worker co-op pathway",
+        "Worker-ownership resources (co-ops, ESOPs)",
       ],
     },
     {
@@ -102,7 +98,7 @@ const PRICING_CONTENT = {
       { label: "Association white-labeling", cells: [false, false, true] },
       { label: "Aggregate member dashboard", cells: [false, false, true] },
       { label: "CDFI lender package export", cells: [false, true, true] },
-      { label: "Communis integration", cells: [true, true, true] },
+      { label: "Worker-ownership resources", cells: [true, true, true] },
       { label: "Support level", cells: ["Standard", "Priority", "Dedicated"] },
     ] as { label: string; cells: (boolean | string)[] }[],
   },
@@ -121,27 +117,14 @@ const PRICING_CONTENT = {
     },
     {
       q: "What happens to my documents if I cancel?",
-      a: "You have 90 days after cancellation to export your full document vault and generated profiles. We never delete data without notice.",
+      a: "We keep your documents and profiles for 90 days after cancellation, and we'll provide a complete export of everything on request during that window. We never delete your data without notice.",
     },
     {
       q: "How does Successio connect to Communis for worker co-op transitions?",
-      a: "Successio prepares the business for sale. Communis enables workers or community members to acquire it as a cooperative. From your Business Profile, one click routes eligible deals into the Communis acquisition pathway — connecting sellers directly to co-op development resources and CDFI financing.",
+      a: "Successio prepares the business for sale. If a worker buyout interests you, your Business Profile points you to employee-ownership resources — including Communis, which helps retiring owners explore co-op and ESOP transitions. We link to these resources; there is no formal integration or partnership yet.",
     },
   ],
-  transaction: {
-    heading: "When a deal closes",
-    sub: "We only win when you do.",
-    paragraph:
-      "The transaction fee applies only when a buyer connects with you through Successio — via a shared profile link, a trade association referral, or our buyer network. If you already know your buyer, there's no fee. Payment is processed at closing via Stripe Connect — funds are released to you automatically after the platform fee is deducted.",
-    note: "Transaction fees are separate from your monthly subscription.",
-  },
 };
-
-const FEE_STATS = [
-  { value: `${(TRANSACTION_FEE.rate * 100).toFixed(2)}%`, label: "platform fee on closed deal value" },
-  { value: `$${TRANSACTION_FEE.min.toLocaleString()}`, label: "minimum per transaction" },
-  { value: `$${TRANSACTION_FEE.max.toLocaleString()}`, label: "maximum cap — no surprises" },
-];
 
 function Cell({ value }: { value: boolean | string }) {
   if (value === true) return <Check className="mx-auto size-4 text-amber" aria-label="Included" />;
@@ -155,15 +138,8 @@ export default function PricingPage() {
     <main className="relative" id="main-content">
       <SiteNav />
 
-      {/* Trust bar */}
-      <div className="border-b border-edge pt-24">
-        <p className="mx-auto max-w-6xl px-5 py-4 text-center font-mono text-xs uppercase tracking-wider text-ink-faint">
-          {c.trustBar}
-        </p>
-      </div>
-
       {/* Hero */}
-      <section className="relative overflow-hidden pt-16 pb-12">
+      <section className="relative overflow-hidden pt-36 pb-12">
         <div className="pointer-events-none absolute inset-0 -z-10 bg-grid bg-grid-fade" />
         <div className="mx-auto max-w-3xl px-5 text-center">
           <h1 className="text-balance text-[clamp(2rem,4.5vw,3.2rem)] font-semibold leading-[1.05] tracking-tight text-ink">
@@ -258,30 +234,6 @@ export default function PricingPage() {
               </details>
             ))}
           </div>
-        </div>
-      </section>
-
-      {/* Transaction fee */}
-      <section className="relative border-t border-edge bg-canvas-soft/30 py-24">
-        <div className="mx-auto max-w-4xl px-5 text-center">
-          <h2 className="text-3xl font-semibold tracking-tight text-ink md:text-4xl">
-            {c.transaction.heading}
-          </h2>
-          <p className="mt-3 text-lg text-amber-bright">{c.transaction.sub}</p>
-
-          <div className="mt-12 grid grid-cols-1 gap-8 sm:grid-cols-3">
-            {FEE_STATS.map((s) => (
-              <div key={s.label}>
-                <div className="text-4xl font-semibold tracking-tight text-ink md:text-5xl">{s.value}</div>
-                <p className="mx-auto mt-2 max-w-[12rem] text-sm text-ink-soft">{s.label}</p>
-              </div>
-            ))}
-          </div>
-
-          <p className="mx-auto mt-12 max-w-2xl text-base leading-relaxed text-ink-soft text-pretty">
-            {c.transaction.paragraph}
-          </p>
-          <p className="mt-4 font-mono text-xs text-ink-faint">{c.transaction.note}</p>
         </div>
       </section>
 

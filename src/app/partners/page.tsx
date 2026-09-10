@@ -74,9 +74,16 @@ const PILOT = [
   "Co-funded with foundation or grant support where it's available",
 ];
 
+// Types of organizations this is built for — not a list of signed partners.
 const PARTNERS = [
-  "NTMA", "PMPA", "PHCC", "ACCA", "AGC", "IEC", "NECA", "ATA", "AFBF",
-  "MEP Centers", "CDFIs", "Urban Manufacturing Alliances", "Foundations",
+  "National trade associations",
+  "State & regional chapters",
+  "MEP Centers",
+  "CDFIs & SBA lenders",
+  "Regional manufacturing alliances",
+  "Economic-development agencies",
+  "Community foundations",
+  "Employee-ownership centers",
 ];
 
 export default function PartnersPage() {
@@ -218,9 +225,8 @@ export default function PartnersPage() {
                     lift across your membership before you commit to anything.
                   </p>
                   <p className="mt-4 text-base leading-relaxed text-ink-soft text-pretty">
-                    Our flagship pilot is built for national trade associations
-                    like the <span className="text-ink">NTMA</span>. Be the charter
-                    partner for your trade.
+                    Our flagship pilot is built for national trade associations.
+                    Be the charter partner for your trade.
                   </p>
                   <div className="mt-7">
                     <Link href="/contact?plan=partner">
