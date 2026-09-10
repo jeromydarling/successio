@@ -35,6 +35,10 @@ const A_BUSINESS = `E2E Fresh Shop ${TS}`;
 const B_EMAIL = `e2e+fullcov-seed-${TS}@successio.pro`;
 const B_BUSINESS = `E2E Coverage Shop ${TS}`;
 
+// Concierge intake (public form, no account) — cleaned up by the superadmin test.
+const C_EMAIL = `e2e+concierge-${TS}@successio.pro`;
+const C_BUSINESS = `E2E Concierge Shop ${TS}`;
+
 let page: Page;
 let buyerToken = "";
 
@@ -76,19 +80,39 @@ test.afterAll(async () => {
 
 // ── A. Public surfaces ────────────────────────────────────────────────────────
 
-test("pricing page renders all four live Stripe payment links, and Stripe serves them", async () => {
+test("pricing page: one-fee model, 12-month toggle, four tiers, concierge", async () => {
   await page.goto("/pricing");
-  const html = await page.content();
-  const links = [...new Set(html.match(/buy\.stripe\.com\/[A-Za-z0-9]+/g) ?? [])];
-  expect(links.length, "four payment links on the pricing page").toBe(4);
-
-  for (const link of links) {
-    const res = await page.request.get(`https://${link}`, { maxRedirects: 5 });
-    expect(res.status(), `payment link ${link} reachable`).toBeLessThan(400);
+  await expect(page.getByRole("heading", { name: /one fee\. not a subscription/i })).toBeVisible();
+  for (const tier of ["New Owner", "Owner", "Concierge", "Partner"]) {
+    await expect(page.getByRole("heading", { name: tier, exact: true })).toBeVisible();
   }
 
-  // Concierge (done-for-you) section present.
+  // Pay-in-full by default; toggle to 12 monthly payments.
+  await expect(page.getByText("$499").first()).toBeVisible();
+  await page.getByRole("switch", { name: /spread/i }).click();
+  await expect(page.getByText(/\$588 total/).first()).toBeVisible();
+
+  // The old subscription checkout links must be gone — they'd misrepresent the model.
+  expect(await page.content()).not.toMatch(/buy\.stripe\.com/);
+
+  // Concierge (done-for-you) section present and routes to the intake page.
   await expect(page.getByText(/prefer we do it for you/i)).toBeVisible();
+  await expect(page.getByRole("link", { name: /request concierge/i }).first()).toHaveAttribute("href", "/concierge");
+});
+
+test("concierge intake: public form submits", async () => {
+  // Desktop only — the row is cleaned up by the superadmin test, which is desktop-only.
+  test.skip(test.info().project.name === "mobile", "cleaned up by the desktop superadmin test");
+  await page.goto("/concierge");
+  await expect(page.getByRole("heading", { name: /hand us the shoebox/i })).toBeVisible();
+  await page.getByLabel(/your name/i).fill("E2E Concierge Requester");
+  await page.getByLabel(/email/i).fill(C_EMAIL);
+  await page.getByLabel(/business name/i).fill(C_BUSINESS);
+  await page.getByLabel(/trade/i).selectOption("manufacturing");
+  await page.getByLabel(/timeline/i).selectOption("under_6mo");
+  await page.getByLabel(/paper files/i).check();
+  await page.getByRole("button", { name: /request concierge/i }).click();
+  await expect(page.getByText(/we've got it/i)).toBeVisible({ timeout: 15_000 });
 });
 
 test("help center: index, search, and article pages render", async () => {
@@ -158,10 +182,9 @@ test("settings surfaces the private email-ingest address and the billing card", 
   await expect(page.getByText(/email documents in/i)).toBeVisible();
   await expect(page.locator("code", { hasText: "docs+" })).toBeVisible();
   await expect(page.getByText(/^Billing$/)).toBeVisible();
-  await expect(page.getByRole("link", { name: /subscribe monthly/i })).toHaveAttribute(
-    "href",
-    /buy\.stripe\.com/
-  );
+  await expect(page.getByText(/\$499 once/)).toBeVisible();
+  await expect(page.getByRole("link", { name: /see pricing/i })).toHaveAttribute("href", "/pricing");
+  await expect(page.getByRole("link", { name: /have us do it for you/i })).toHaveAttribute("href", "/concierge");
   await purge(page, A_EMAIL); // done with account A
 });
 
@@ -362,6 +385,17 @@ test("superadmin: login, roster, org detail, CRM notes", async ({ browser }) => 
   await expect(sa.getByText("E2E CRM note — safe to delete.")).toBeVisible({ timeout: 15_000 });
   await sa.getByRole("button", { name: "Delete note" }).first().click();
   await expect(sa.getByText("E2E CRM note — safe to delete.")).toHaveCount(0, { timeout: 15_000 });
+
+  // Concierge queue: the public intake from earlier is here; work it, then remove it.
+  await sa.goto("/superadmin/concierge");
+  await expect(sa.getByRole("heading", { name: /concierge requests/i })).toBeVisible();
+  const row = sa.locator("tr", { hasText: C_BUSINESS });
+  await expect(row).toBeVisible({ timeout: 15_000 });
+  await row.getByRole("combobox").selectOption("contacted");
+  await expect(row.getByRole("combobox")).toHaveValue("contacted", { timeout: 15_000 });
+  sa.once("dialog", (d) => d.accept());
+  await row.getByRole("button", { name: /delete/i }).click();
+  await expect(sa.locator("tr", { hasText: C_BUSINESS })).toHaveCount(0, { timeout: 15_000 });
 
   await ctx.close();
 });

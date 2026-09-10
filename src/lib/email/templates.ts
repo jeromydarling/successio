@@ -191,6 +191,71 @@ export function inviteAcceptedEmail(opts: {
   };
 }
 
+/** Concierge intake — confirmation to the requester. */
+export function conciergeReceivedEmail(opts: { name?: string }): Built {
+  const hi = opts.name ? `Hi ${opts.name.replace(/</g, "&lt;")},` : "Hi,";
+  return {
+    subject: "We've got your concierge request",
+    html: layout({
+      heading: "We've got it — here's what happens next",
+      bodyHtml: `<p style="margin:0 0 16px;">${hi}</p>
+        <p style="margin:0 0 12px;">Thanks for asking us to build your business record. A specialist will reach out within <strong>one business day</strong> to schedule a 30-minute kickoff call.</p>
+        <p style="margin:0 0 12px;">On that call we'll learn the business, agree on what to collect, and put your two knowledge interviews on the calendar. Nothing is charged until we've talked and you're comfortable with the scope.</p>
+        <p style="margin:0 0 8px;color:${INK};"><strong>In the meantime, no homework.</strong> Don't organize anything — the shoebox is fine. That's the point.</p>`,
+    }),
+    text: `${hi}\n\nThanks for asking us to build your business record. A specialist will reach out within one business day to schedule a 30-minute kickoff call. Nothing is charged until we've talked.\n\nIn the meantime, no homework — don't organize anything. The shoebox is fine.`,
+  };
+}
+
+/** Concierge intake — notification to the team inbox. */
+export function conciergeTeamEmail(opts: {
+  name: string;
+  email: string;
+  phone?: string;
+  businessName: string;
+  vertical: string;
+  location?: string;
+  hasPaper: boolean;
+  hasDigital: boolean;
+  hasQuickbooks: boolean;
+  timeline: string;
+  notes?: string;
+  hasAccount: boolean;
+  adminUrl: string;
+}): Built {
+  const esc = (s: string) => s.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const records = [
+    opts.hasPaper && "paper",
+    opts.hasDigital && "digital",
+    opts.hasQuickbooks && "QuickBooks",
+  ]
+    .filter(Boolean)
+    .join(", ") || "not specified";
+  const rows: [string, string][] = [
+    ["Name", opts.name],
+    ["Email", opts.email],
+    ["Phone", opts.phone || "—"],
+    ["Business", opts.businessName],
+    ["Trade", opts.vertical],
+    ["Location", opts.location || "—"],
+    ["Records", records],
+    ["Timeline", opts.timeline],
+    ["Has account", opts.hasAccount ? "yes — linked to their org" : "no"],
+  ];
+  return {
+    subject: `Concierge request: ${opts.businessName} (${opts.vertical})`,
+    html: layout({
+      heading: "New concierge request",
+      bodyHtml: `<table role="presentation" width="100%" style="font-size:14px;margin:0 0 16px;">${rows
+        .map(([k, v]) => `<tr><td style="padding:4px 8px 4px 0;color:#94a3b8;white-space:nowrap;">${k}</td><td style="padding:4px 0;color:${INK};">${esc(v)}</td></tr>`)
+        .join("")}</table>
+        ${opts.notes ? `<p style="margin:0 0 16px;white-space:pre-wrap;">${esc(opts.notes)}</p>` : ""}
+        <p style="margin:0 0 24px;">${button(opts.adminUrl, "Open the concierge queue")}</p>`,
+    }),
+    text: `New concierge request\n\n${rows.map(([k, v]) => `${k}: ${v}`).join("\n")}${opts.notes ? `\n\nNotes:\n${opts.notes}` : ""}\n\nQueue: ${opts.adminUrl}`,
+  };
+}
+
 /** Generic security alert (new device, 2FA on/off, account deleted). */
 export function securityAlertEmail(opts: {
   name?: string;

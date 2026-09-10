@@ -9,6 +9,7 @@ import { eq, desc, sql } from "drizzle-orm";
 import { router, superAdminProcedure } from "../trpc";
 import * as schema from "@/db/schema";
 import { nanoid } from "@/lib/nanoid";
+import { CONCIERGE_STATUSES, canTransition, type ConciergeStatus } from "@/lib/concierge";
 
 /** Compute churn risk score (0–4) and signal labels for a single org. */
 function churnRisk(orgId: string, signals: {
@@ -210,6 +211,59 @@ export const superadminRouter = router({
   /** All orgs (with any geocoordinates already resolved) for the map.
    *  Geocoding itself runs in the daily cron — never inside a page request,
    *  where Nominatim's 1 req/sec limit would add ~11s of latency. */
+  // ── Concierge (done-for-you) queue ────────────────────────────────────────
+
+  conciergeList: superAdminProcedure.query(async ({ ctx }) => {
+    return ctx.db
+      .select()
+      .from(schema.conciergeRequests)
+      .orderBy(desc(schema.conciergeRequests.createdAt))
+      .limit(200)
+      .all();
+  }),
+
+  conciergeUpdate: superAdminProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        status: z.enum(CONCIERGE_STATUSES).optional(),
+        assignee: z.string().max(80).nullable().optional(),
+        internalNotes: z.string().max(4000).nullable().optional(),
+        scheduledFor: z.string().max(120).nullable().optional(),
+      })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const row = await ctx.db
+        .select({ status: schema.conciergeRequests.status })
+        .from(schema.conciergeRequests)
+        .where(eq(schema.conciergeRequests.id, input.id))
+        .get();
+      if (!row) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const patch: Partial<typeof schema.conciergeRequests.$inferInsert> = {};
+      if (input.status !== undefined) {
+        if (!canTransition(row.status as ConciergeStatus, input.status)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: `Can't move from ${row.status} to ${input.status}.` });
+        }
+        patch.status = input.status;
+        if (input.status === "delivered") patch.deliveredAt = new Date();
+      }
+      if (input.assignee !== undefined) patch.assignee = input.assignee;
+      if (input.internalNotes !== undefined) patch.internalNotes = input.internalNotes;
+      if (input.scheduledFor !== undefined) patch.scheduledFor = input.scheduledFor;
+      patch.updatedAt = new Date();
+
+      await ctx.db.update(schema.conciergeRequests).set(patch).where(eq(schema.conciergeRequests.id, input.id));
+      return { ok: true };
+    }),
+
+  conciergeDelete: superAdminProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      await ctx.db.delete(schema.conciergeRequests).where(eq(schema.conciergeRequests.id, input.id));
+      return { ok: true };
+    }),
+
   mapData: superAdminProcedure.query(async ({ ctx }) => {
     const db = ctx.db;
 

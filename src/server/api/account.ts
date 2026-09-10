@@ -29,6 +29,7 @@ import { purgeOrgs } from "@/lib/purge-org";
 import { getEmailSender } from "@/lib/email/sender";
 import { securityAlertEmail } from "@/lib/email/templates";
 import { appUrl } from "@/lib/app-url";
+import { CONCIERGE_STATUS_META, type ConciergeStatus } from "@/lib/concierge";
 
 const {
   users,
@@ -48,6 +49,7 @@ const {
   shareViews,
   documentRequests,
   readinessScores,
+  conciergeRequests,
 } = schema;
 
 async function loadUser(ctx: { db: any; session: { sub: string } }) {
@@ -132,6 +134,39 @@ export const accountRouter = router({
         device: describeDevice(e.userAgent),
         createdAt: e.createdAt,
       })),
+    };
+  }),
+
+  // ── Concierge status (owner-facing) ───────────────────────────────────────
+
+  /** The latest done-for-you request tied to this account's email or org. */
+  conciergeStatus: protectedProcedure.query(async ({ ctx }) => {
+    const user = await loadUser(ctx);
+    const rows = await ctx.db
+      .select({
+        id: conciergeRequests.id,
+        status: conciergeRequests.status,
+        scheduledFor: conciergeRequests.scheduledFor,
+        assignee: conciergeRequests.assignee,
+        createdAt: conciergeRequests.createdAt,
+        orgId: conciergeRequests.orgId,
+        email: conciergeRequests.email,
+      })
+      .from(conciergeRequests)
+      .orderBy(desc(conciergeRequests.createdAt))
+      .limit(50)
+      .all();
+    const mine = rows.find((r) => r.orgId === user.orgId || r.email === user.email.toLowerCase());
+    if (!mine) return null;
+    const meta = CONCIERGE_STATUS_META[mine.status as ConciergeStatus];
+    return {
+      status: mine.status,
+      label: meta?.label ?? mine.status,
+      message: meta?.ownerMessage ?? "",
+      tone: meta?.tone ?? "neutral",
+      scheduledFor: mine.scheduledFor,
+      assignee: mine.assignee,
+      createdAt: mine.createdAt,
     };
   }),
 

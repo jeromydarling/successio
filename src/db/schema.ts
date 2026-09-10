@@ -175,6 +175,41 @@ export const securityEvents = sqliteTable(
   ]
 );
 
+/**
+ * Concierge (done-for-you) requests — an owner asks us to build their
+ * business record for them. Public intake (no account required); linked to
+ * an org when the email matches an existing owner. Worked from the
+ * superadmin queue: new → contacted → scheduled → in_progress → delivered.
+ */
+export const conciergeRequests = sqliteTable(
+  "concierge_requests",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id"),
+    name: text("name").notNull(),
+    email: text("email").notNull(),
+    phone: text("phone"),
+    businessName: text("business_name").notNull(),
+    vertical: text("vertical").notNull(),
+    location: text("location"),
+    hasPaper: integer("has_paper", { mode: "boolean" }).notNull().default(false),
+    hasDigital: integer("has_digital", { mode: "boolean" }).notNull().default(false),
+    hasQuickbooks: integer("has_quickbooks", { mode: "boolean" }).notNull().default(false),
+    timeline: text("timeline").notNull(), // under_6mo | 6_12mo | 12_24mo | exploring
+    notes: text("notes"),
+    status: text("status").notNull().default("new"), // new | contacted | scheduled | in_progress | delivered | declined
+    assignee: text("assignee"),
+    internalNotes: text("internal_notes"),
+    scheduledFor: text("scheduled_for"),
+    deliveredAt: integer("delivered_at", { mode: "timestamp" }),
+    ...timestamps,
+  },
+  (t) => [
+    index("concierge_status_idx").on(t.status, t.createdAt),
+    index("concierge_email_idx").on(t.email),
+  ]
+);
+
 // ─── Document Pipeline ────────────────────────────────────────────────────────
 
 export const documents = sqliteTable(

@@ -27,6 +27,8 @@ CF_AI_GATEWAY_ID = "successio-prod"
 CF_ACCOUNT_ID = "f84f7181c051be0040e972dcad48e697"
 APP_URL = "https://successio.pro"
 EMAIL_FROM = "Successio <noreply@successio.pro>"
+# Where concierge (done-for-you) intake requests are sent for follow-up.
+CONCIERGE_INBOX = "hello@successio.pro"
 # Signup sends a confirm-email link and creates the account unverified.
 # Verification is soft (the app still works; settings shows a nag until
 # confirmed) — but registering an address you don't own now gets flagged.

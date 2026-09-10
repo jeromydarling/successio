@@ -2,22 +2,22 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Check, Building2, Wrench, HardHat, type LucideIcon } from "lucide-react";
+import { Check, Building2, Wrench, HardHat, Handshake, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export interface PricingTier {
-  id: "new-owner" | "owner" | "partner";
+  id: "new-owner" | "owner" | "concierge" | "partner";
   name: string;
   pitch: string;
-  /** Self-serve tiers use numeric prices; Partner uses a custom string. */
-  priceMonthly?: number;
-  priceAnnual?: number;
-  annualSave?: string;
+  /** One fee — paid in full, or spread over 12 monthly payments. */
+  priceOnce?: number;
+  priceMonthly12?: number;
+  /** Partner uses a custom string instead. */
   customPrice?: string;
   priceSub?: string;
-  /** Live Stripe payment links (monthly/annual) — renders a "subscribe now" path. */
-  subscribe?: { monthly: string; annual: string };
+  /** Live checkout links, when present — one-time and 12-month paths. */
+  checkout?: { once?: string; installments?: string };
   badge?: string;
   elevated?: boolean;
   variant: "primary" | "outline" | "ghost";
@@ -29,63 +29,66 @@ export interface PricingTier {
 const ICONS: Record<PricingTier["id"], LucideIcon> = {
   "new-owner": HardHat,
   owner: Wrench,
+  concierge: Handshake,
   partner: Building2,
 };
 
+function money(n: number): string {
+  return n.toLocaleString("en-US");
+}
+
 export function PricingCards({ tiers }: { tiers: PricingTier[] }) {
-  const [annual, setAnnual] = useState(true);
+  const [spread, setSpread] = useState(false);
 
   return (
-    <div className="mx-auto max-w-6xl px-5">
-      {/* Billing toggle */}
-      <div className="mb-10 flex items-center justify-center gap-4">
-        <span className={cn("text-sm", !annual ? "text-ink" : "text-ink-faint")}>Monthly</span>
+    <div className="mx-auto max-w-7xl px-5">
+      {/* Payment toggle */}
+      <div className="mb-10 flex flex-wrap items-center justify-center gap-4">
+        <span className={cn("text-sm", !spread ? "text-ink" : "text-ink-faint")}>Pay in full</span>
         <button
           type="button"
           role="switch"
-          aria-checked={annual}
-          aria-label="Toggle annual billing"
-          onClick={() => setAnnual((a) => !a)}
+          aria-checked={spread}
+          aria-label="Toggle spreading payments over 12 months"
+          onClick={() => setSpread((s) => !s)}
           className={cn(
             "relative h-7 w-12 rounded-full border transition-colors duration-200",
-            annual ? "border-amber/40 bg-amber/30" : "border-edge bg-white/[0.06]"
+            spread ? "border-amber/40 bg-amber/30" : "border-edge bg-white/[0.06]"
           )}
         >
           <span
             className={cn(
               "absolute top-1/2 size-5 -translate-y-1/2 rounded-full bg-amber-bright transition-all duration-200",
-              annual ? "left-[1.6rem]" : "left-1"
+              spread ? "left-[1.6rem]" : "left-1"
             )}
           />
         </button>
-        <span className={cn("text-sm", annual ? "text-ink" : "text-ink-faint")}>Annual</span>
+        <span className={cn("text-sm", spread ? "text-ink" : "text-ink-faint")}>
+          Spread over 12 months
+        </span>
         <span className="rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-medium text-emerald-400">
-          Save 20%
+          One fee, no subscription
         </span>
       </div>
 
       {/* Cards */}
-      <div className="grid grid-cols-1 items-start gap-5 md:grid-cols-3">
+      <div className="grid grid-cols-1 items-start gap-5 md:grid-cols-2 xl:grid-cols-4">
         {tiers.map((t) => {
           const Icon = ICONS[t.id];
-          const price = annual ? t.priceAnnual : t.priceMonthly;
+          const checkoutHref = spread ? t.checkout?.installments : t.checkout?.once;
           return (
             <div
               key={t.id}
               className={cn(
                 "relative flex h-full flex-col rounded-2xl border bg-canvas-soft/40 p-6",
-                t.elevated
-                  ? "border-amber-bright ring-2 ring-amber md:scale-[1.02]"
-                  : "border-edge"
+                t.elevated ? "border-amber-bright ring-2 ring-amber xl:scale-[1.02]" : "border-edge"
               )}
             >
               {t.badge && (
                 <span
                   className={cn(
-                    "absolute -top-3 left-1/2 -translate-x-1/2 rounded-full px-3 py-1 text-xs font-semibold",
-                    t.elevated
-                      ? "bg-amber text-canvas"
-                      : "border border-edge bg-canvas text-ink-soft"
+                    "absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold",
+                    t.elevated ? "bg-amber text-canvas" : "border border-edge bg-canvas text-ink-soft"
                   )}
                 >
                   {t.badge}
@@ -107,17 +110,35 @@ export function PricingCards({ tiers }: { tiers: PricingTier[] }) {
                     <div className="text-3xl font-semibold tracking-tight text-ink">{t.customPrice}</div>
                     {t.priceSub && <p className="mt-1 text-xs text-ink-faint">{t.priceSub}</p>}
                   </>
-                ) : (
-                  <div key={annual ? "a" : "m"} className="animate-price-swap">
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-4xl font-semibold tracking-tight text-ink">${price}</span>
-                      <span className="text-sm text-ink-faint">/mo</span>
-                    </div>
-                    <p className="mt-1 text-xs text-ink-faint">
-                      {annual ? `billed annually · ${t.annualSave}` : "billed monthly"}
-                    </p>
+                ) : t.priceOnce != null && t.priceMonthly12 != null ? (
+                  <div key={spread ? "s" : "o"} className="animate-price-swap">
+                    {spread ? (
+                      <>
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-4xl font-semibold tracking-tight text-ink">
+                            ${money(t.priceMonthly12)}
+                          </span>
+                          <span className="text-sm text-ink-faint">/mo × 12</span>
+                        </div>
+                        <p className="mt-1 text-xs text-ink-faint">
+                          ${money(t.priceMonthly12 * 12)} total · then it&apos;s yours, nothing more
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-4xl font-semibold tracking-tight text-ink">
+                            ${money(t.priceOnce)}
+                          </span>
+                          <span className="text-sm text-ink-faint">once</span>
+                        </div>
+                        <p className="mt-1 text-xs text-ink-faint">
+                          save ${money(t.priceMonthly12 * 12 - t.priceOnce)} vs. monthly
+                        </p>
+                      </>
+                    )}
                   </div>
-                )}
+                ) : null}
               </div>
 
               {/* CTA */}
@@ -131,12 +152,12 @@ export function PricingCards({ tiers }: { tiers: PricingTier[] }) {
                 </Button>
               </Link>
               {t.note && <p className="mt-2.5 text-center text-xs text-ink-faint">{t.note}</p>}
-              {t.subscribe && (
+              {checkoutHref && (
                 <a
-                  href={annual ? t.subscribe.annual : t.subscribe.monthly}
+                  href={checkoutHref}
                   className="mt-2 block text-center text-xs font-medium text-amber underline underline-offset-2 hover:text-amber-bright"
                 >
-                  Ready now? Subscribe — 14-day free trial, cancel anytime
+                  Ready now? {spread ? "Start 12 monthly payments" : "Pay once"}
                 </a>
               )}
 
