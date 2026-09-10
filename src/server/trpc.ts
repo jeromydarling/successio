@@ -55,6 +55,8 @@ export interface Context {
     ENCRYPTION_KEY?: string;
     // Token protecting the /superadmin CRM area.
     SUPER_ADMIN_TOKEN?: string;
+    // Buyer marketplace visibility: "on" = public; otherwise superadmin preview only.
+    MARKETPLACE_ENABLED?: string;
   };
   session: SessionPayload | null;
   req: Request;

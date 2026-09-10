@@ -29,6 +29,9 @@ APP_URL = "https://successio.pro"
 EMAIL_FROM = "Successio <noreply@successio.pro>"
 # Where concierge (done-for-you) intake requests are sent for follow-up.
 CONCIERGE_INBOX = "hello@successio.pro"
+# Buyer marketplace is hidden (404 + noindex) until there is real inventory.
+# Flip to "on" to open it publicly; superadmin can preview it while off.
+MARKETPLACE_ENABLED = "off"
 # Signup sends a confirm-email link and creates the account unverified.
 # Verification is soft (the app still works; settings shows a nag until
 # confirmed) — but registering an address you don't own now gets flagged.

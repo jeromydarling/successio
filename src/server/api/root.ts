@@ -11,10 +11,12 @@ import { legacyRouter } from "./legacy";
 import { translationRouter } from "./translation";
 import { superadminRouter } from "./superadmin";
 import { accountRouter } from "./account";
+import { marketplaceRouter } from "./marketplace";
 
 export const appRouter = router({
   auth: authRouter,
   account: accountRouter,
+  marketplace: marketplaceRouter,
   documents: documentsRouter,
   businesses: businessesRouter,
   knowledge: knowledgeRouter,

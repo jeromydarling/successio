@@ -210,6 +210,37 @@ export const conciergeRequests = sqliteTable(
   ]
 );
 
+/**
+ * Marketplace listings — blind, seller-opted-in teasers of businesses for
+ * sale. Never carries the business name; buyers reach the full profile only
+ * through the NDA-gated share token. Hidden behind MARKETPLACE_ENABLED until
+ * there is real inventory.
+ */
+export const marketplaceListings = sqliteTable(
+  "marketplace_listings",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id").notNull(),
+    profileId: text("profile_id").notNull(),
+    shareTokenId: text("share_token_id").notNull(), // nda-tier token buyers land on
+    headline: text("headline").notNull(),
+    teaser: text("teaser").notNull(), // JSON: public-tier sections only
+    vertical: text("vertical").notNull(),
+    region: text("region").notNull(),
+    revenueBand: text("revenue_band").notNull(),
+    employeeBand: text("employee_band").notNull(),
+    readinessBand: text("readiness_band").notNull(),
+    founded: integer("founded"),
+    status: text("status").notNull().default("live"), // live | paused
+    publishedAt: integer("published_at", { mode: "timestamp" }),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("marketplace_org_idx").on(t.orgId),
+    index("marketplace_status_idx").on(t.status, t.publishedAt),
+  ]
+);
+
 // ─── Document Pipeline ────────────────────────────────────────────────────────
 
 export const documents = sqliteTable(
