@@ -32,6 +32,9 @@ export default function robots(): MetadataRoute.Robots {
           "/reset-password",
           "/forgot-password",
           "/verify-email",
+          // Hidden beta until there's real inventory — remove when
+          // MARKETPLACE_ENABLED flips to "on".
+          "/marketplace",
         ],
       },
     ],

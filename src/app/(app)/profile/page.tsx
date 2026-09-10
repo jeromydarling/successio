@@ -10,6 +10,7 @@ import {
 import { AppTopNav } from "@/components/app/app-topnav";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc-client";
+import { MarketplaceCard } from "@/components/profile/marketplace-card";
 import { cn } from "@/lib/utils";
 
 const TIERS = [
@@ -430,6 +431,8 @@ export default function ProfilePage() {
               );
             })()}
           </div>
+
+          <MarketplaceCard />
 
           {/* Communis worker co-op CTA */}
           <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.04] p-5">

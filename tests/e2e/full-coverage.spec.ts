@@ -100,6 +100,13 @@ test("pricing page: one-fee model, 12-month toggle, four tiers, concierge", asyn
   await expect(page.getByRole("link", { name: /request concierge/i }).first()).toHaveAttribute("href", "/concierge");
 });
 
+test("marketplace is hidden from the public (404 + robots) until there's real inventory", async () => {
+  expect((await page.request.get("/marketplace")).status()).toBe(404);
+  expect((await page.request.get("/marketplace/anything")).status()).toBe(404);
+  const robots = await (await page.request.get("/robots.txt")).text();
+  expect(robots).toContain("Disallow: /marketplace");
+});
+
 test("concierge intake: public form submits", async () => {
   // Desktop only — the row is cleaned up by the superadmin test, which is desktop-only.
   test.skip(test.info().project.name === "mobile", "cleaned up by the desktop superadmin test");
@@ -385,6 +392,13 @@ test("superadmin: login, roster, org detail, CRM notes", async ({ browser }) => 
   await expect(sa.getByText("E2E CRM note — safe to delete.")).toBeVisible({ timeout: 15_000 });
   await sa.getByRole("button", { name: "Delete note" }).first().click();
   await expect(sa.getByText("E2E CRM note — safe to delete.")).toHaveCount(0, { timeout: 15_000 });
+
+  // Marketplace: hidden from the public, but a signed-in superadmin can preview it.
+  await sa.goto("/marketplace");
+  await expect(sa.getByRole("heading", { name: /businesses for sale/i })).toBeVisible({ timeout: 15_000 });
+  await expect(sa.getByText(/private preview/i)).toBeVisible();
+  await sa.goto("/superadmin/marketplace");
+  await expect(sa.getByRole("heading", { name: /marketplace inventory/i })).toBeVisible();
 
   // Concierge queue: the public intake from earlier is here; work it, then remove it.
   await sa.goto("/superadmin/concierge");

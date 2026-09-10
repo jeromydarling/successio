@@ -211,6 +211,30 @@ export const superadminRouter = router({
   /** All orgs (with any geocoordinates already resolved) for the map.
    *  Geocoding itself runs in the daily cron — never inside a page request,
    *  where Nominatim's 1 req/sec limit would add ~11s of latency. */
+  // ── Marketplace (hidden beta) ─────────────────────────────────────────────
+
+  /** Every listing with its (private) business name — inventory view. */
+  marketplaceList: superAdminProcedure.query(async ({ ctx }) => {
+    return ctx.db
+      .select({
+        id: schema.marketplaceListings.id,
+        orgId: schema.marketplaceListings.orgId,
+        orgName: schema.organizations.name,
+        headline: schema.marketplaceListings.headline,
+        vertical: schema.marketplaceListings.vertical,
+        region: schema.marketplaceListings.region,
+        revenueBand: schema.marketplaceListings.revenueBand,
+        readinessBand: schema.marketplaceListings.readinessBand,
+        status: schema.marketplaceListings.status,
+        publishedAt: schema.marketplaceListings.publishedAt,
+      })
+      .from(schema.marketplaceListings)
+      .leftJoin(schema.organizations, eq(schema.organizations.id, schema.marketplaceListings.orgId))
+      .orderBy(desc(schema.marketplaceListings.publishedAt))
+      .limit(200)
+      .all();
+  }),
+
   // ── Concierge (done-for-you) queue ────────────────────────────────────────
 
   conciergeList: superAdminProcedure.query(async ({ ctx }) => {
