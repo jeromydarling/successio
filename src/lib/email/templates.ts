@@ -191,6 +191,53 @@ export function inviteAcceptedEmail(opts: {
   };
 }
 
+/** Payment receipt — one-time, or installment N of 12 (final one celebrates). */
+export function paymentReceivedEmail(opts: {
+  name?: string;
+  planLabel: string;
+  mode: "once" | "installments";
+  installment: number;
+  paidInFull: boolean;
+  url: string;
+}): Built {
+  const hi = opts.name ? `Hi ${opts.name.replace(/</g, "&lt;")},` : "Hi,";
+  const headline = opts.paidInFull
+    ? `Your ${opts.planLabel} plan is paid in full`
+    : `Payment ${opts.installment} of 12 received`;
+  const body = opts.paidInFull
+    ? opts.mode === "once"
+      ? `Thank you. Your ${opts.planLabel} plan is yours for the life of the sale — nothing more is owed, and nothing renews.`
+      : `That was the twelfth and final payment. Your ${opts.planLabel} plan is yours — nothing more is owed, and nothing renews.`
+    : `Thank you. ${12 - opts.installment} monthly payment${12 - opts.installment === 1 ? "" : "s"} remain, then your ${opts.planLabel} plan is yours outright. Stripe will email the itemized receipt separately.`;
+  return {
+    subject: headline,
+    html: layout({
+      heading: headline,
+      bodyHtml: `<p style="margin:0 0 16px;">${hi}</p>
+        <p style="margin:0 0 20px;">${body}</p>
+        <p style="margin:0 0 24px;">${button(opts.url, "Open your dashboard")}</p>`,
+    }),
+    text: `${hi}\n\n${body}\n\n${opts.url}`,
+  };
+}
+
+/** A monthly installment didn't go through. */
+export function paymentFailedEmail(opts: { name?: string; planLabel: string; updateUrl: string }): Built {
+  const hi = opts.name ? `Hi ${opts.name.replace(/</g, "&lt;")},` : "Hi,";
+  return {
+    subject: `Action needed: your ${opts.planLabel} payment didn't go through`,
+    html: layout({
+      heading: "A payment didn't go through",
+      bodyHtml: `<p style="margin:0 0 16px;">${hi}</p>
+        <p style="margin:0 0 16px;">This month's payment for your ${opts.planLabel} plan was declined — usually an expired card or a bank hold. Nothing has been removed from your account.</p>
+        <p style="margin:0 0 20px;">Stripe will retry automatically over the next few days. To fix it now, update your card:</p>
+        <p style="margin:0 0 24px;">${button(opts.updateUrl, "Update payment method")}</p>
+        <p style="margin:0;color:#94a3b8;font-size:13px;">Questions? Just reply to this email.</p>`,
+    }),
+    text: `${hi}\n\nThis month's payment for your ${opts.planLabel} plan was declined. Nothing has been removed from your account. Stripe will retry over the next few days; to fix it now, update your card:\n\n${opts.updateUrl}`,
+  };
+}
+
 /** Concierge intake — confirmation to the requester. */
 export function conciergeReceivedEmail(opts: { name?: string }): Built {
   const hi = opts.name ? `Hi ${opts.name.replace(/</g, "&lt;")},` : "Hi,";

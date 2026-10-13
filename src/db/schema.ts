@@ -41,6 +41,15 @@ export const organizations = sqliteTable(
     // job only reports views since then) + a separate opt-out.
     viewDigestSentAt: integer("view_digest_sent_at", { mode: "timestamp" }),
     viewDigestOptOut: integer("view_digest_opt_out", { mode: "boolean" }).notNull().default(false),
+    // Billing — one fee, paid once or as 12 monthly installments (Stripe).
+    plan: text("plan").notNull().default("free"), // free | new_owner | owner | concierge
+    billingMode: text("billing_mode"), // once | installments
+    planPaidAt: integer("plan_paid_at", { mode: "timestamp" }), // first successful payment
+    planPaidInFullAt: integer("plan_paid_in_full_at", { mode: "timestamp" }),
+    installmentsPaid: integer("installments_paid").notNull().default(0),
+    stripeCustomerId: text("stripe_customer_id"),
+    stripeSubscriptionId: text("stripe_subscription_id"),
+    lastPaymentFailedAt: integer("last_payment_failed_at", { mode: "timestamp" }),
     ...timestamps,
   },
   (t) => [index("orgs_assoc_idx").on(t.associationId)]
@@ -240,6 +249,15 @@ export const marketplaceListings = sqliteTable(
     index("marketplace_status_idx").on(t.status, t.publishedAt),
   ]
 );
+
+/** Stripe webhook idempotency — an event id is processed at most once. */
+export const stripeEvents = sqliteTable("stripe_events", {
+  id: text("id").primaryKey(),
+  type: text("type").notNull(),
+  processedAt: integer("processed_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`),
+});
 
 // ─── Document Pipeline ────────────────────────────────────────────────────────
 

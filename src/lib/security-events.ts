@@ -27,7 +27,8 @@ export type SecurityEventType =
   | "share_link_revoked"
   | "data_exported"
   | "account_deletion_requested"
-  | "email_verified";
+  | "email_verified"
+  | "payment_received";
 
 /** Plain-English labels for the Settings activity list. */
 export const SECURITY_EVENT_LABELS: Record<SecurityEventType, string> = {
@@ -48,6 +49,7 @@ export const SECURITY_EVENT_LABELS: Record<SecurityEventType, string> = {
   data_exported: "Data export downloaded",
   account_deletion_requested: "Account deletion requested",
   email_verified: "Email address verified",
+  payment_received: "Payment received",
 };
 
 type Db = DrizzleD1Database<typeof schema>;

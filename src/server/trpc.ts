@@ -57,6 +57,9 @@ export interface Context {
     SUPER_ADMIN_TOKEN?: string;
     // Buyer marketplace visibility: "on" = public; otherwise superadmin preview only.
     MARKETPLACE_ENABLED?: string;
+    // Stripe billing — Checkout Sessions + signed webhook (src/lib/stripe.ts).
+    STRIPE_SECRET_KEY?: string;
+    STRIPE_WEBHOOK_SECRET?: string;
   };
   session: SessionPayload | null;
   req: Request;
