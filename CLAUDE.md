@@ -628,6 +628,8 @@ Always fetch live docs before implementing integrations (do not rely on training
 | `SUPER_ADMIN_TOKEN` | Password for the `/superadmin` CRM | GitHub repo secret → synced by deploy.yml | self-generated (`openssl rand -hex 32`) | ✅ set + synced |
 | `E2E_ADMIN_TOKEN` | Gates the E2E seed/purge endpoints (fail-closed) | GitHub repo secret → synced by deploy.yml | self-generated (`openssl rand -hex 32`) | ✅ set + synced |
 | `ENCRYPTION_KEY` | App-layer AES-256-GCM field encryption (document text, entity blobs, search chunks, 2FA secrets) — see `src/lib/crypto.ts` | GitHub repo secret → synced by deploy.yml | self-generated (`openssl rand -hex 32`) | ⚠️ optional — a key is HKDF-derived from `JWT_SECRET` until set. Set it to decouple the two **before** ever rotating `JWT_SECRET`; ciphertext is key-id tagged so old rows stay readable |
+| `STRIPE_SECRET_KEY` | Stripe Checkout Sessions (one-time + 12-installment) — `src/lib/stripe.ts`, `POST /api/checkout` | GitHub repo secret → synced by deploy.yml | dashboard.stripe.com → Developers → API keys | ⬜ set it to turn on live checkout (UI shows "Pay now" only when present) |
+| `STRIPE_WEBHOOK_SECRET` | Verifies `POST /api/stripe/webhook` (entitlement source of truth) | GitHub repo secret → synced by deploy.yml | dashboard.stripe.com → Developers → Webhooks → endpoint signing secret | ⬜ create endpoint `https://successio.pro/api/stripe/webhook` with events `checkout.session.completed`, `invoice.paid`, `invoice.payment_failed`, `customer.subscription.deleted` |
 | `SENTRY_DSN` | Worker error reporting (`withSentry`) | Cloudflare dashboard secret | sentry.io | ✅ set via dashboard |
 
 > `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` were removed from the registry:

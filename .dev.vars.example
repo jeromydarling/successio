@@ -35,3 +35,9 @@ E2E_ADMIN_TOKEN=
 #   variable in CF Workers Builds (not just a runtime secret).
 SENTRY_DSN=
 NEXT_PUBLIC_SENTRY_DSN=
+
+# Stripe billing (Checkout Sessions + webhook). Test keys locally.
+# Webhook endpoint: POST /api/stripe/webhook — events: checkout.session.completed,
+# invoice.paid, invoice.payment_failed, customer.subscription.deleted
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=

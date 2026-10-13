@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Check, Building2, Wrench, HardHat, Handshake, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { CheckoutButton } from "@/components/billing/checkout-button";
 
 export interface PricingTier {
   id: "new-owner" | "owner" | "concierge" | "partner";
@@ -16,8 +17,6 @@ export interface PricingTier {
   /** Partner uses a custom string instead. */
   customPrice?: string;
   priceSub?: string;
-  /** Live checkout links, when present — one-time and 12-month paths. */
-  checkout?: { once?: string; installments?: string };
   badge?: string;
   elevated?: boolean;
   variant: "primary" | "outline" | "ghost";
@@ -75,7 +74,6 @@ export function PricingCards({ tiers }: { tiers: PricingTier[] }) {
       <div className="grid grid-cols-1 items-start gap-5 md:grid-cols-2 xl:grid-cols-4">
         {tiers.map((t) => {
           const Icon = ICONS[t.id];
-          const checkoutHref = spread ? t.checkout?.installments : t.checkout?.once;
           return (
             <div
               key={t.id}
@@ -152,13 +150,12 @@ export function PricingCards({ tiers }: { tiers: PricingTier[] }) {
                 </Button>
               </Link>
               {t.note && <p className="mt-2.5 text-center text-xs text-ink-faint">{t.note}</p>}
-              {checkoutHref && (
-                <a
-                  href={checkoutHref}
-                  className="mt-2 block text-center text-xs font-medium text-amber underline underline-offset-2 hover:text-amber-bright"
-                >
-                  Ready now? {spread ? "Start 12 monthly payments" : "Pay once"}
-                </a>
+              {t.id !== "partner" && (
+                <div className="mt-2 text-center">
+                  <CheckoutButton plan={t.id === "new-owner" ? "new_owner" : t.id} mode={spread ? "installments" : "once"}>
+                    Ready now? {spread ? "Start 12 monthly payments" : "Pay once"}
+                  </CheckoutButton>
+                </div>
               )}
 
               {/* Features */}

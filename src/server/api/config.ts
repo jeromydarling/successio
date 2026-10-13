@@ -8,6 +8,10 @@ import { router, publicProcedure } from "../trpc";
 import { getAssociationConfig } from "@/lib/association";
 
 export const configRouter = router({
+  /** Whether Stripe checkout is live (keys present). Lets the UI show a real
+   *  "Pay now" button instead of "we'll send you a link." */
+  billing: publicProcedure.query(({ ctx }) => ({ enabled: !!ctx.env.STRIPE_SECRET_KEY })),
+
   association: publicProcedure.query(({ ctx }) => {
     return getAssociationConfig(ctx.env as unknown as Record<string, string | undefined>);
   }),
